@@ -1,0 +1,7 @@
+---
+- name: install k3s controller
+  hosts: controllers
+  become: true
+  roles:
+    - k3s_controller
+
