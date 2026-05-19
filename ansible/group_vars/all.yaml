@@ -14,3 +14,12 @@ metallb_chart_version: "0.15.3"
 metallb_ip_range: "10.0.20.200-10.0.20.230"
 metallb_address_pool_name: "default-pool"
 metallb_l2_advertisement_name: "default-l2"
+
+# traefik
+# traefik
+traefik_namespace: "traefik"
+traefik_release_name: "traefik"
+traefik_chart: "traefik/traefik"
+traefik_repo_name: "traefik"
+traefik_repo_url: "https://traefik.github.io/charts"
+traefik_chart_version: "40.2.0"
