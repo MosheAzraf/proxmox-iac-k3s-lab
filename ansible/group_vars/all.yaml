@@ -1,2 +1,16 @@
 ---
+# k3s vars
 k3s_version: "v1.35.4+k3s1"
+
+# metallb
+metallb_namespace: "metallb-system"
+metallb_release_name: "metallb"
+metallb_chart: "metallb/metallb"
+metallb_repo_name: "metallb"
+metallb_repo_url: "https://metallb.github.io/metallb"
+metallb_chart_version: "0.15.3"
+
+#metallb ip pool
+metallb_ip_range: "10.0.20.200-10.0.20.230"
+metallb_address_pool_name: "default-pool"
+metallb_l2_advertisement_name: "default-l2"

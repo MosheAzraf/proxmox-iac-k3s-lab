@@ -1,0 +1,10 @@
+---
+# Runs locally and requires Helm + kubectl configured on the development machine
+- name: install metallb
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  become: false
+  roles:
+    - metallb
+
