@@ -16,7 +16,6 @@ metallb_address_pool_name: "default-pool"
 metallb_l2_advertisement_name: "default-l2"
 
 # traefik
-# traefik
 traefik_namespace: "traefik"
 traefik_release_name: "traefik"
 traefik_chart: "traefik/traefik"

@@ -1,3 +1,4 @@
+---
 - name: add traefik helm repo
   ansible.builtin.command: helm repo add {{ traefik_repo_name }} {{ traefik_repo_url }}
   changed_when: false
