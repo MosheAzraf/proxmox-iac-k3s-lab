@@ -1,0 +1,19 @@
+---
+- name: get k3s node token from controller
+  ansible.builtin.command: cat /var/lib/rancher/k3s/server/node-token
+  register: k3s_node_token
+  changed_when: false
+  no_log: true
+  delegate_to: "{{ groups['controllers'][0] }}"
+
+- name: install (join) k3s worker
+  ansible.builtin.shell: |
+    curl -sfL https://get.k3s.io | INSTALL_K3S_VERSION="{{ k3s_version }}" K3S_URL="https://{{ hostvars[groups['controllers'][0]].ansible_host }}:6443" K3S_TOKEN="{{ k3s_node_token.stdout }}" sh -
+  args:
+    creates: /usr/local/bin/k3s
+  no_log: true
+
+- name: label k3s worker node
+  ansible.builtin.command: kubectl label node {{ inventory_hostname }} node-role.kubernetes.io/worker=worker --overwrite
+  delegate_to: "{{ groups['controllers'][0] }}"
+  changed_when: false
