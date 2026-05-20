@@ -1,15 +1,14 @@
 ---
 - name: add traefik helm repo
-  ansible.builtin.command: helm repo add {{ traefik_repo_name }} {{ traefik_repo_url }}
-  changed_when: false
-
-- name: update helm repos
-  ansible.builtin.command: helm repo update
-  changed_when: false
+  kubernetes.core.helm_repository:
+    name: "{{ traefik_repo_name }}"
+    repo_url: "{{ traefik_repo_url }}"
 
 - name: install traefik
-  ansible.builtin.command: >
-    helm upgrade --install {{ traefik_release_name }} {{ traefik_chart }}
-    --namespace {{ traefik_namespace }}
-    --create-namespace
-    --version {{ traefik_chart_version }}
+  kubernetes.core.helm:
+    name: "{{ traefik_release_name }}"
+    chart_ref: "{{ traefik_chart }}"
+    release_namespace: "{{ traefik_namespace }}"
+    create_namespace: true
+    chart_version: "{{ traefik_chart_version }}"
+    state: present
