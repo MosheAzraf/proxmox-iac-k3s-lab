@@ -1,42 +1,26 @@
 ---
 # Runs locally and requires Helm + kubectl configured on the development machine
 - name: add metallb helm repo
-  ansible.builtin.command: helm repo add {{ metallb_repo_name }} {{ metallb_repo_url }}
-  changed_when: false
-
-- name: update helm repos
-  ansible.builtin.command: helm repo update
-  changed_when: false
+  kubernetes.core.helm_repository:
+    name: "{{ metallb_repo_name }}"
+    repo_url: "{{ metallb_repo_url }}"
 
 - name: install metallb
-  ansible.builtin.command: >
-    helm upgrade --install {{ metallb_release_name }} {{ metallb_chart }}
-    --namespace {{ metallb_namespace }}
-    --create-namespace
-    --version {{ metallb_chart_version }}
+  kubernetes.core.helm:
+    name: "{{ metallb_release_name }}"
+    chart_ref: "{{ metallb_chart }}"
+    release_namespace: "{{ metallb_namespace }}"
+    create_namespace: true
+    chart_version: "{{ metallb_chart_version }}"
+    state: present
 
-- name: configure metallb ip address pool
-  ansible.builtin.command: kubectl apply -f -
-  args:
-    stdin: |
-      apiVersion: metallb.io/v1beta1
-      kind: IPAddressPool
-      metadata:
-        name: {{ metallb_address_pool_name }}
-        namespace: {{ metallb_namespace }}
-      spec:
-        addresses:
-          - {{ metallb_ip_range }}
+- name: configure metallb ip pool
+  kubernetes.core.k8s:
+    state: present
+    definition: "{{ lookup('template', 'ip-address-pool.yaml.j2') | from_yaml }}"
 
 - name: configure metallb l2 advertisement
-  ansible.builtin.command: kubectl apply -f -
-  args:
-    stdin: | 
-      apiVersion: metallb.io/v1beta1
-      kind: L2Advertisement
-      metadata:
-        name: {{ metallb_l2_advertisement_name }}
-        namespace: {{ metallb_namespace }}
-      spec:
-        ipAddressPools:
-          - {{ metallb_address_pool_name }}
+  kubernetes.core.k8s:
+    state: present
+    definition: "{{ lookup('template', 'l2-advertisement.yaml.j2') | from_yaml }}"
+
