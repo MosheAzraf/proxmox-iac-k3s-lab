@@ -1,4 +1,5 @@
 ---
+# Runs locally and requires Helm + kubeconfig configured on the development machine
 - name: add traefik helm repo
   kubernetes.core.helm_repository:
     name: "{{ traefik_repo_name }}"
