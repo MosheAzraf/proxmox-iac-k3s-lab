@@ -1,6 +1,6 @@
 # GitOps Repository Notes
 
-This note documents the planned GitOps structure for the `proxmox-iac-k3s-lab` project.
+This note documents the GitOps structure and Argo CD self-management setup for the `proxmox-iac-k3s-lab` project.
 
 The goal is to keep the Kubernetes / GitOps layer clean, separated by responsibility, and ready for Argo CD management.
 
@@ -20,11 +20,11 @@ Argo CD
 cert-manager
 ```
 
-After this bootstrap layer is ready, Argo CD will manage the GitOps layer from the `_kubernetes` directory.
+After this bootstrap layer is ready, Argo CD manages the GitOps layer from the `_kubernetes` directory.
 
 ## GitOps Structure
 
-Planned structure:
+Current structure:
 
 ```text
 _kubernetes/
@@ -32,6 +32,7 @@ _kubernetes/
 │   └── root-app.yaml
 ├── applications/
 │   └── argocd.yaml
+├── notes.md
 └── platform/
     └── argocd/
         └── values.yaml
@@ -53,7 +54,7 @@ The main file is:
 root-app.yaml
 ```
 
-This file will be applied manually once with `kubectl`.
+This file is applied manually once with `kubectl`.
 
 Its job is to point Argo CD to the GitOps applications defined in the repository.
 
@@ -67,13 +68,13 @@ This directory contains Argo CD `Application` manifests.
 
 These files tell Argo CD what to manage.
 
-Initial file:
+Current file:
 
 ```text
 argocd.yaml
 ```
 
-This will be used to make Argo CD manage itself.
+This is used to make Argo CD manage itself.
 
 Later, more applications can be added here:
 
@@ -93,7 +94,7 @@ This directory contains platform component configuration.
 
 For Helm-based components, this is where Helm values files should live.
 
-Initial structure:
+Current structure:
 
 ```text
 platform/
@@ -102,6 +103,157 @@ platform/
 ```
 
 This keeps Argo CD Application manifests separate from Helm values and platform configuration.
+
+## Argo CD Self-Management
+
+The first GitOps goal was to make Argo CD self-managed.
+
+Initial files created:
+
+```text
+_kubernetes/bootstrap/root-app.yaml
+_kubernetes/applications/argocd.yaml
+_kubernetes/platform/argocd/values.yaml
+```
+
+The first version does not use automatic sync.
+
+Manual sync is safer for the first self-managed Argo CD setup.
+
+## Private GitHub Repository Access
+
+The GitHub repository is currently private.
+
+Repository URL used by Argo CD:
+
+```text
+https://github.com/MosheAzraf/proxmox-iac-k3s-lab.git
+```
+
+A fine-grained GitHub token was created with access only to this repository.
+
+Permissions used:
+
+```text
+Contents: Read-only
+Metadata: Read-only
+```
+
+The token was added to Argo CD through the UI:
+
+```text
+Settings → Repositories → Connect Repo
+```
+
+Connection type:
+
+```text
+HTTPS
+```
+
+The token is not committed to Git.
+
+A local zsh environment variable was also created for local reference:
+
+```text
+github_proxmox_iac_k3s_lab_token
+```
+
+## Root App
+
+The Root App was applied manually:
+
+```bash
+kubectl apply -f bootstrap/root-app.yaml
+```
+
+Result:
+
+```text
+application.argoproj.io/root-app created
+```
+
+The Root App points to:
+
+```text
+_kubernetes/applications
+```
+
+Its job is to create and manage child Argo CD Applications from that directory.
+
+## Argo CD Application
+
+The first child application is:
+
+```text
+argocd
+```
+
+It uses the Argo CD Helm chart:
+
+```text
+repoURL: https://argoproj.github.io/argo-helm
+chart: argo-cd
+targetRevision: 9.5.14
+```
+
+It also references the local values file from the Git repository:
+
+```text
+_kubernetes/platform/argocd/values.yaml
+```
+
+The values file is currently minimal:
+
+```yaml
+# Argo CD Helm values
+```
+
+No custom Helm values are required at this stage.
+
+## Current Sync Status
+
+Applications were checked with:
+
+```bash
+kubectl get applications -n argocd
+```
+
+Current result:
+
+```text
+NAME       SYNC STATUS   HEALTH STATUS
+argocd     Synced        Healthy
+root-app   Synced        Healthy
+```
+
+This means the initial GitOps setup is working.
+
+Argo CD is now self-managed at the first basic level.
+
+## Important Design Decision
+
+The repository separates these concerns:
+
+```text
+bootstrap/
+```
+
+Manual one-time Argo CD bootstrap entry point.
+
+```text
+applications/
+```
+
+Argo CD Application manifests only.
+
+```text
+platform/
+```
+
+Actual platform configuration, Helm values, and Kubernetes resources.
+
+This avoids putting everything under a single `argocd` directory and keeps the repo easier to understand.
 
 ## Future Expanded Structure
 
@@ -129,52 +281,25 @@ _kubernetes/
         └── l2-advertisement.yaml
 ```
 
-## Important Design Decision
-
-The repository separates these concerns:
-
-```text
-bootstrap/
-```
-
-Manual one-time Argo CD bootstrap entry point.
-
-```text
-applications/
-```
-
-Argo CD Application manifests only.
-
-```text
-platform/
-```
-
-Actual platform configuration, Helm values, and Kubernetes resources.
-
-This avoids putting everything under a single `argocd` directory and keeps the repo easier to understand.
-
-## First GitOps Goal
-
-The first GitOps step will be Argo CD self-management.
-
-Initial files to create:
-
-```text
-_kubernetes/bootstrap/root-app.yaml
-_kubernetes/applications/argocd.yaml
-_kubernetes/platform/argocd/values.yaml
-```
-
-The first version should not use automatic sync.
-
-Manual sync is safer for the first self-managed Argo CD setup.
-
 ## Current Status
 
 Ansible bootstrap is considered mostly complete.
 
-Next planned phase:
+Initial Argo CD GitOps setup is working.
+
+Current GitOps state:
 
 ```text
-Start GitOps setup with Argo CD self-management.
+root-app: Synced / Healthy
+argocd: Synced / Healthy
 ```
+
+## Next Planned Phase
+
+Next possible phase:
+
+```text
+Move cert-manager management into GitOps.
+```
+
+This should be done gradually and manually synced first, without automatic sync.
