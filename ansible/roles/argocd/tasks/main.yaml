@@ -1,0 +1,15 @@
+---
+# Runs locally and requires Helm + kubeconfig configured on the development machine
+- name: add argocd helm repo
+  kubernetes.core.helm_repository:
+    name: "{{ argocd_release_name }}"
+    repo_url: "{{ argocd_repo_url }}"
+
+- name: install argocd
+  kubernetes.core.helm:
+    name: "{{ argocd_release_name }}"
+    chart_ref: "{{ argocd_chart }}"
+    chart_version: "{{ argocd_chart_version }}"
+    release_namespace: "{{ argocd_namespace }}"
+    create_namespace: true
+    wait: true

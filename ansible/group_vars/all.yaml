@@ -22,3 +22,11 @@ traefik_chart: "traefik/traefik"
 traefik_repo_name: "traefik"
 traefik_repo_url: "https://traefik.github.io/charts"
 traefik_chart_version: "40.2.0"
+
+#argocd
+argocd_repo_name: argo
+argocd_namespace: argocd
+argocd_release_name: argocd
+argocd_chart: argo/argo-cd
+argocd_repo_url: https://argoproj.github.io/argo-helm
+argocd_chart_version: 9.5.14
