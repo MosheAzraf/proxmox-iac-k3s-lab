@@ -1,0 +1,16 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: root-app
+  namespace: argocd
+spec:
+  project: default
+
+  source:
+    repoURL: https://github.com/MosheAzraf/proxmox-iac-k3s-lab.git
+    targetRevision: main
+    path: _kubernetes/applications
+
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: argocd
