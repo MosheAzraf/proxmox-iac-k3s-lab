@@ -172,6 +172,168 @@ Reason:
 
 Traefik is kept as a minimal bootstrap install through Ansible. Later, Argo CD can manage Traefik values and configuration from the GitOps layer.
 
+## Argo CD Role
+
+Argo CD was added as a new Ansible bootstrap role.
+
+The goal was to install Argo CD into the k3s cluster using Helm through Ansible, in the same style already used for MetalLB and Traefik.
+
+New files added:
+
+```text
+ansible/playbooks/argocd.yaml
+ansible/roles/argocd/tasks/main.yaml
+```
+
+The playbook runs locally:
+
+```yaml
+---
+# Runs locally and requires Helm + kubectl configured on the development machine
+- name: install argocd
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  become: false
+  roles:
+    - argocd
+```
+
+The Argo CD role uses:
+
+```yaml
+kubernetes.core.helm_repository
+kubernetes.core.helm
+```
+
+The role adds the Argo Helm repository and installs the Argo CD Helm chart.
+
+The install task uses `wait: true` so Ansible waits for the Helm release resources to become ready before finishing.
+
+## Argo CD Variables
+
+The Argo CD variables were added to:
+
+```text
+ansible/group_vars/all.yaml
+```
+
+Current values:
+
+```yaml
+argocd_repo_name: argo
+argocd_namespace: argocd
+argocd_release_name: argocd
+argocd_chart: argo/argo-cd
+argocd_repo_url: https://argoproj.github.io/argo-helm
+argocd_chart_version: 9.5.14
+```
+
+The selected Helm chart version was:
+
+```text
+9.5.14
+```
+
+This chart installs Argo CD app version:
+
+```text
+v3.4.2
+```
+
+Important note:
+
+`argocd_chart_version` is the Helm chart version, not the Argo CD application version.
+
+## Argo CD Installation
+
+Argo CD was installed with:
+
+```bash
+ansible-playbook playbooks/argocd.yaml
+```
+
+Result:
+
+```text
+ok=2
+changed=2
+failed=0
+```
+
+The installation created the `argocd` namespace and installed the Argo CD Helm release.
+
+## Argo CD Validation
+
+Pods were checked with:
+
+```bash
+kubectl get pods -n argocd
+```
+
+All main Argo CD pods were running:
+
+```text
+argocd-application-controller
+argocd-applicationset-controller
+argocd-dex-server
+argocd-notifications-controller
+argocd-redis
+argocd-repo-server
+argocd-server
+```
+
+The Redis init job finished successfully:
+
+```text
+argocd-redis-secret-init   Completed
+```
+
+Services were checked with:
+
+```bash
+kubectl get svc -n argocd
+```
+
+The Argo CD server service is currently:
+
+```text
+argocd-server   ClusterIP   80/TCP,443/TCP
+```
+
+This means Argo CD is currently internal to the cluster.
+
+## Argo CD UI Access
+
+Temporary local access to the UI can be done with:
+
+```bash
+kubectl port-forward svc/argocd-server -n argocd 8080:443
+```
+
+Then open:
+
+```text
+https://localhost:8080
+```
+
+The browser may show a certificate warning. This is expected at this stage.
+
+The default username is:
+
+```text
+admin
+```
+
+The initial admin password can be retrieved manually with:
+
+```bash
+kubectl -n argocd get secret argocd-initial-admin-secret \
+  -o jsonpath="{.data.password}" | base64 -d
+```
+
+This command is kept as a manual access note, not as an Ansible role task.
+
 ## Current Responsibility Split
 
 Current approach:
@@ -183,16 +345,23 @@ Ansible:
 - install k3s worker
 - bootstrap MetalLB
 - bootstrap Traefik
+- bootstrap Argo CD
 
 Future Argo CD:
+- manage itself from Git
 - manage Traefik values
 - manage Traefik routing configuration
+- manage platform components
 - manage applications and GitOps resources
 ```
 
 Important note:
 
 If Argo CD later takes ownership of the Traefik Helm release, avoid running the Ansible Traefik role repeatedly unless it is intentionally still part of bootstrap.
+
+Important note:
+
+Argo CD is currently installed by Ansible using Helm. The next planned step is to make Argo CD self-managed carefully, starting with a Git-based Argo CD Application without automatic sync.
 
 ## Validation Commands
 
@@ -224,6 +393,32 @@ changed=0
 failed=0
 ```
 
+Argo CD:
+
+```bash
+ansible-playbook playbooks/argocd.yaml
+```
+
+Expected result after everything already exists:
+
+```text
+ok=2
+changed=0
+failed=0
+```
+
+Check Argo CD pods:
+
+```bash
+kubectl get pods -n argocd
+```
+
+Check Argo CD services:
+
+```bash
+kubectl get svc -n argocd
+```
+
 ## Final State
 
 MetalLB:
@@ -243,9 +438,20 @@ No values file in Ansible for now
 Future values should likely move to Argo CD / GitOps
 ```
 
+Argo CD:
+
+```text
+Helm install managed by kubernetes.core.helm
+Installed into argocd namespace
+argocd-server currently exposed as ClusterIP
+Temporary UI access is done with kubectl port-forward
+Future self-management should move to Argo CD / GitOps
+```
+
 ## Useful Commit Messages Used
 
 ```bash
 git commit -m "Refactor MetalLB role to use Kubernetes modules"
 git commit -m "Refactor Traefik role to use Helm module"
+git commit -m "Add Argo CD Ansible installation"
 ```
