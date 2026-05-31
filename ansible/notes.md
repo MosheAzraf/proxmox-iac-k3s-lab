@@ -334,6 +334,145 @@ kubectl -n argocd get secret argocd-initial-admin-secret \
 
 This command is kept as a manual access note, not as an Ansible role task.
 
+
+## cert-manager Role
+
+cert-manager was added as a new Ansible bootstrap role.
+
+The goal was to install cert-manager into the k3s cluster using Helm through Ansible, as part of the base cluster setup together with MetalLB, Traefik and Argo CD.
+
+New files added:
+
+```text
+ansible/playbooks/cert_manager.yaml
+ansible/roles/cert_manager/tasks/main.yaml
+```
+
+The playbook runs locally:
+
+```yaml
+---
+# Runs locally and requires Helm + kubectl configured on the development machine
+- name: install cert-manager
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  become: false
+  roles:
+    - cert_manager
+```
+
+The cert-manager role uses:
+
+```yaml
+kubernetes.core.helm_repository
+kubernetes.core.helm
+```
+
+The role adds the Jetstack Helm repository and installs the cert-manager Helm chart.
+
+The install task uses `wait: true` so Ansible waits for the Helm release resources to become ready before finishing.
+
+## cert-manager Variables
+
+The cert-manager variables were added to:
+
+```text
+ansible/group_vars/all.yaml
+```
+
+Current values:
+
+```yaml
+cert_manager_repo_name: jetstack
+cert_manager_namespace: cert-manager
+cert_manager_release_name: cert-manager
+cert_manager_chart: jetstack/cert-manager
+cert_manager_repo_url: https://charts.jetstack.io
+cert_manager_chart_version: 1.20.2
+cert_manager_crds_enabled: true
+```
+
+The selected Helm chart version was:
+
+```text
+1.20.2
+```
+
+This chart installs cert-manager app version:
+
+```text
+v1.20.2
+```
+
+Important note:
+
+`cert_manager_crds_enabled: true` is required so the cert-manager CRDs are installed together with the Helm chart.
+
+This matches the official Helm install behavior:
+
+```bash
+helm install \
+  cert-manager oci://quay.io/jetstack/charts/cert-manager \
+  --version v1.20.2 \
+  --namespace cert-manager \
+  --create-namespace \
+  --set crds.enabled=true
+```
+
+In this project, the regular Jetstack Helm repository is used instead of the OCI chart, so the chart version is written as:
+
+```text
+1.20.2
+```
+
+## cert-manager Installation
+
+cert-manager was installed with:
+
+```bash
+ansible-playbook playbooks/cert_manager.yaml
+```
+
+Result:
+
+```text
+ok=2
+changed=2
+failed=0
+```
+
+The installation created the `cert-manager` namespace and installed the cert-manager Helm release.
+
+## cert-manager Validation
+
+Pods were checked with:
+
+```bash
+kubectl get pods -n cert-manager
+```
+
+All main cert-manager pods were running:
+
+```text
+cert-manager
+cert-manager-cainjector
+cert-manager-webhook
+```
+
+The Helm release was checked with:
+
+```bash
+helm list -n cert-manager
+```
+
+Result:
+
+```text
+NAME            NAMESPACE       REVISION        STATUS      CHART                  APP VERSION
+cert-manager    cert-manager    1               deployed    cert-manager-v1.20.2   v1.20.2
+```
+
 ## Current Responsibility Split
 
 Current approach:
@@ -346,6 +485,7 @@ Ansible:
 - bootstrap MetalLB
 - bootstrap Traefik
 - bootstrap Argo CD
+- bootstrap cert-manager
 
 Future Argo CD:
 - manage itself from Git
@@ -419,6 +559,32 @@ Check Argo CD services:
 kubectl get svc -n argocd
 ```
 
+cert-manager:
+
+```bash
+ansible-playbook playbooks/cert_manager.yaml
+```
+
+Expected result after everything already exists:
+
+```text
+ok=2
+changed=0
+failed=0
+```
+
+Check cert-manager pods:
+
+```bash
+kubectl get pods -n cert-manager
+```
+
+Check cert-manager Helm release:
+
+```bash
+helm list -n cert-manager
+```
+
 ## Final State
 
 MetalLB:
@@ -448,10 +614,22 @@ Temporary UI access is done with kubectl port-forward
 Future self-management should move to Argo CD / GitOps
 ```
 
+
+cert-manager:
+
+```text
+Helm install managed by kubernetes.core.helm
+Installed into cert-manager namespace
+CRDs installed through crds.enabled=true
+cert-manager, cainjector and webhook pods are running
+Future management can move to Argo CD / GitOps later
+```
+
 ## Useful Commit Messages Used
 
 ```bash
 git commit -m "Refactor MetalLB role to use Kubernetes modules"
 git commit -m "Refactor Traefik role to use Helm module"
 git commit -m "Add Argo CD Ansible installation"
+git commit -m "Add cert-manager Ansible installation"
 ```
