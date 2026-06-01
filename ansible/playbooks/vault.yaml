@@ -1,0 +1,5 @@
+---
+- name: install vault
+  hosts: vault
+  roles:
+    - vault
