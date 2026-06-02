@@ -95,13 +95,156 @@ It also references the local values file from the Git repository:
 _kubernetes/platform/argocd/values.yaml
 ```
 
-The values file is currently minimal:
+Current values:
 
 ```yaml
 # Argo CD Helm values
+configs:
+  params:
+    server.insecure: true
 ```
 
-No custom Helm values are required at this stage.
+The `server.insecure: true` setting is used because Argo CD is exposed through Traefik, and TLS is terminated at Traefik.
+
+## Argo CD Config Manifests
+
+Argo CD also manages additional configuration manifests from:
+
+```text
+_kubernetes/platform/argocd/config
+```
+
+Current files:
+
+```text
+certificate.yaml
+ingress-route.yaml
+```
+
+The `argocd` Application uses multiple sources:
+
+```text
+1. Argo CD Helm chart
+2. Git repository values file
+3. Git repository config manifests
+```
+
+The config source points to:
+
+```text
+_kubernetes/platform/argocd/config
+```
+
+This keeps the Helm values file separate from regular Kubernetes manifests.
+
+## Internal TLS Certificate
+
+A cert-manager Certificate was created for Argo CD:
+
+```text
+argocd-server-tls
+```
+
+It is stored in the `argocd` namespace and uses the internal ClusterIssuer:
+
+```text
+internal-ca
+```
+
+The certificate is created from:
+
+```text
+_kubernetes/platform/argocd/config/certificate.yaml
+```
+
+Validation command:
+
+```bash
+kubectl get certificate -n argocd
+```
+
+Expected result:
+
+```text
+argocd-server-tls   True   argocd-server-tls
+```
+
+## Traefik IngressRoute
+
+Argo CD is exposed through Traefik using an IngressRoute.
+
+The route is defined in:
+
+```text
+_kubernetes/platform/argocd/config/ingress-route.yaml
+```
+
+Hostname:
+
+```text
+argocd.home.lab
+```
+
+The internal DNS record is configured on the MikroTik router:
+
+```text
+*.home.lab → 10.0.20.200
+```
+
+Traefik LoadBalancer IP:
+
+```text
+10.0.20.200
+```
+
+The IngressRoute sends traffic to the existing Argo CD service:
+
+```text
+argocd-server
+```
+
+Service port:
+
+```text
+80
+```
+
+Validation command:
+
+```bash
+kubectl get ingressroute -n argocd
+```
+
+Expected result:
+
+```text
+argocd
+```
+
+## Browser Access
+
+Argo CD can be accessed through:
+
+```text
+https://argocd.home.lab
+```
+
+The route was tested with:
+
+```bash
+curl -vk --resolve argocd.home.lab:443:10.0.20.200 https://argocd.home.lab
+```
+
+The response returned:
+
+```text
+HTTP/2 200
+<title>Argo CD</title>
+```
+
+This confirms that DNS, Traefik, TLS routing, and Argo CD are working.
+
+The internal CA is not trusted by the Mac yet, so a browser certificate warning is expected.
 
 ## Current Sync Status
 
@@ -111,11 +254,24 @@ Applications were checked with:
 kubectl get applications -n argocd
 ```
 
-Current result:
+Current applications:
+
+```text
+root-app
+argocd
+cert-manager
+cert-manager-config
+external-secrets
+external-secrets-config
+```
+
+Current working state:
 
 ```text
 root-app                  Synced / Healthy
 argocd                    Synced / Healthy
+cert-manager              Synced / Healthy
+cert-manager-config       Synced / Healthy
 external-secrets          Synced / Healthy
 external-secrets-config   Synced / Healthy
 ```
