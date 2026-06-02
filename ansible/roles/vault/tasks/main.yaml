@@ -46,3 +46,44 @@
     name: vault
     enabled: true
     state: started
+
+# unseal vault locally script, usually not recommended, used only for local lab porpuse.
+
+- name: Store Vault unseal key for lab auto-unseal
+  copy:
+    content: "{{ vault_unseal_key }}"
+    dest: /etc/vault.d/unseal.key
+    owner: root
+    group: root
+    mode: "0600"
+  no_log: true
+  when: vault_unseal_key is defined
+
+- name: Copy Vault unseal script
+  template:
+    src: vault-unseal.sh.j2
+    dest: /usr/local/bin/vault-unseal.sh
+    owner: root
+    group: root
+    mode: "0700"
+
+- name: Copy Vault unseal systemd service
+  template:
+    src: vault-unseal.service.j2
+    dest: /etc/systemd/system/vault-unseal.service
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Enable Vault unseal service
+  systemd:
+    name: vault-unseal
+    enabled: true
+    daemon_reload: true
+  when: vault_unseal_key is defined
+
+- name: Run Vault unseal service
+  systemd:
+    name: vault-unseal
+    state: started
+  when: vault_unseal_key is defined

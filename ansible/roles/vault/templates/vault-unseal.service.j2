@@ -1,0 +1,12 @@
+[Unit]
+Description=Unseal Vault for lab environment
+After=vault.service
+Requires=vault.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/vault-unseal.sh
+RemainAfterExit=true
+
+[Install]
+WantedBy=multi-user.target
