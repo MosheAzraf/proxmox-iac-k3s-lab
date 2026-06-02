@@ -1,2 +1,4 @@
 # Argo CD Helm values
-
+configs:
+  params:
+    server.insecure: true
