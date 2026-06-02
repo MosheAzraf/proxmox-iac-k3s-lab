@@ -1,3 +1,6 @@
+# Note:
+# After cert-manager is moved to Argo CD management,
+# do not use this playbook.
 ---
 # Runs locally and requires Helm + kubectl configured on the development machine
 - name: install cert-manager
