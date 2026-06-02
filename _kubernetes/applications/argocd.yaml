@@ -20,9 +20,7 @@ spec:
 
     - repoURL: https://github.com/MosheAzraf/proxmox-iac-k3s-lab.git
       targetRevision: main
-      path: _kubernetes/platform/argocd
-      directory:
-        include: certificate.yaml
+      path: _kubernetes/platform/argocd/config
 
   destination:
     server: https://kubernetes.default.svc
