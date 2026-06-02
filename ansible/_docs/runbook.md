@@ -1,164 +1,136 @@
-# Ansible Runbook
+# Ansible Overview
 
-This file contains short operational commands for the Ansible layer.
+This note documents the Ansible structure and responsibility split for the `proxmox-iac-k3s-lab` project.
 
-## Install Required Ansible Collection
+## Goal
+
+The Ansible layer is responsible for initial bootstrap.
+
+Current Ansible bootstrap includes:
+
+```text
+common node settings
+k3s controller
+k3s worker
+MetalLB
+Traefik
+Argo CD
+cert-manager initial installation
+Vault LXC configuration
+```
+
+cert-manager is installed during the initial bootstrap by Ansible.
+
+After the initial installation, cert-manager is managed by Argo CD.
+
+## Required Ansible Collection
+
+Install:
 
 ```bash
 ansible-galaxy collection install kubernetes.core
 ```
 
-## Reload Shell Environment
+Used modules:
+
+```text
+kubernetes.core.helm_repository
+kubernetes.core.helm
+kubernetes.core.k8s
+```
+
+## Optional Helm Plugin
+
+To avoid Helm idempotency warnings and improve change detection:
+
+```bash
+helm plugin install https://github.com/databus23/helm-diff
+```
+
+This removes warnings like:
+
+```text
+The default idempotency check can fail to report changes in certain cases.
+Install helm diff >= 3.4.1 for better results.
+```
+
+## KUBECONFIG
+
+The local machine previously had multiple kubeconfig files configured:
+
+```bash
+$HOME/.kube/config:$HOME/.kube/config-pi
+```
+
+This caused Ansible to try connecting to an old Kubernetes API address.
+
+The fix was to set:
+
+```bash
+export KUBECONFIG="$HOME/.kube/config"
+```
+
+This was added to:
+
+```text
+~/.zshrc
+```
+
+After reloading the shell:
 
 ```bash
 source ~/.zshrc
 ```
 
-## Validate Vault SSH / Ansible Connectivity
-
-```bash
-ansible vault -m ping
-```
-
-Expected:
+The active kubeconfig points to the current Proxmox k3s cluster:
 
 ```text
-vault-k3s | SUCCESS
-ping: pong
+https://10.0.20.101:6443
 ```
 
-## Run MetalLB Playbook
+## Current Responsibility Split
 
-```bash
-ansible-playbook playbooks/metallb.yaml
-```
-
-Expected result after everything already exists:
+Current approach:
 
 ```text
-ok=4
-changed=0
-failed=0
+Ansible:
+- install common node settings
+- install k3s controller
+- install k3s worker
+- bootstrap MetalLB
+- bootstrap Traefik
+- bootstrap Argo CD
+- bootstrap cert-manager during initial setup
+- configure Vault LXC
+- configure local lab auto-unseal for Vault
+
+Argo CD:
+- manage itself from Git
+- manage cert-manager after initial bootstrap
+- manage cert-manager internal CA configuration
+- manage External Secrets Operator
+- manage External Secrets configuration
+- gradually take over platform components
 ```
 
-## Run Traefik Playbook
+Important note:
 
-```bash
-ansible-playbook playbooks/traefik.yaml
-```
+If Argo CD takes ownership of Helm releases that were initially installed by Ansible, avoid running the matching Ansible role repeatedly unless it is intentionally still part of bootstrap.
 
-Expected result after everything already exists:
+## Vault Auto-Unseal Note
+
+Vault uses a local scripted unseal mechanism in this lab.
+
+This is only for local lab convenience, so Vault can recover automatically after restart and External Secrets Operator can reconnect without manual unseal.
+
+The unseal key is not stored in Git.
+
+It is stored only on the Vault LXC at:
 
 ```text
-ok=2
-changed=0
-failed=0
+/etc/vault.d/unseal.key
 ```
 
-## Run Argo CD Playbook
+This approach is not recommended for production.
 
-```bash
-ansible-playbook playbooks/argocd.yaml
-```
-
-Expected result after everything already exists:
-
-```text
-ok=2
-changed=0
-failed=0
-```
-
-## Check Argo CD Pods
-
-```bash
-kubectl get pods -n argocd
-```
-
-## Check Argo CD Services
-
-```bash
-kubectl get svc -n argocd
-```
-
-## Open Argo CD UI
-
-```bash
-kubectl port-forward svc/argocd-server -n argocd 8080:443
-```
-
-Open:
-
-```text
-https://localhost:8080
-```
-
-## Get Initial Argo CD Admin Password
-
-```bash
-kubectl -n argocd get secret argocd-initial-admin-secret   -o jsonpath="{.data.password}" | base64 -d
-```
-
-## Run cert-manager Playbook
-
-```bash
-ansible-playbook playbooks/cert_manager.yaml
-```
-
-Expected result after everything already exists:
-
-```text
-ok=2
-changed=0
-failed=0
-```
-
-## Check cert-manager Pods
-
-```bash
-kubectl get pods -n cert-manager
-```
-
-## Check cert-manager Helm Release
-
-```bash
-helm list -n cert-manager
-```
-
-## Run Vault Playbook
-
-```bash
-ansible-playbook playbooks/vault.yaml
-```
-
-Expected result after everything already exists:
-
-```text
-ok=8
-changed=0
-failed=0
-```
-
-## Check Vault Service
-
-```bash
-ssh root@10.0.20.110 "systemctl status vault --no-pager"
-```
-
-## Check Vault API
-
-```bash
-curl http://10.0.20.110:8200/v1/sys/health
-```
-
-## Work With k3s Vault From Mac
-
-```bash
-source ~/.zshrc
-export VAULT_ADDR="$VAULT_K3S_ADDR"
-vault status
-```
-
-If Vault is sealed, unseal it with the locally saved unseal key.
-
-Do not commit Vault tokens or unseal keys to Git.
+Production environments should use external auto-unseal with a KMS or HSM provider.
