@@ -1,8 +1,8 @@
 # Vault Environment Variables
 
-This note explains how I separate the local Vault on my Mac from the Vault running in the k3s lab.
+This note explains how to separate the local Vault on the Mac from the Vault running in the k3s lab.
 
-## Current local Vault variables
+## Current Local Vault Variables
 
 These variables are used for the Vault running locally on the Mac:
 
@@ -14,7 +14,7 @@ export VAULT_TOKEN
 
 Do not change them for the k3s Vault.
 
-## k3s Vault variables
+## k3s Vault Variables
 
 For the Vault running in Proxmox / k3s lab, use separate variable names:
 
@@ -25,11 +25,15 @@ export VAULT_K3S_UNSEAL_KEY=""
 export VAULT_K3S_TOKEN=""
 ```
 
-These can be stored in `~/.zshrc`.
+These can be stored in:
 
-## How to work with the k3s Vault
+```text
+~/.zshrc
+```
 
-When I want the Vault CLI to work against the k3s Vault, I temporarily map the k3s variables into the regular Vault variables:
+## How to Work With the k3s Vault
+
+When the Vault CLI should work against the k3s Vault, temporarily map the k3s variables into the regular Vault variables:
 
 ```bash
 export VAULT_ADDR="$VAULT_K3S_ADDR"
@@ -43,12 +47,26 @@ After this, commands like this will use the k3s Vault:
 vault status
 ```
 
-## Simple rule
+## Simple Rule
 
-`VAULT_ADDR`, `VAULT_UNSEAL_KEY`, and `VAULT_TOKEN` are the active variables that the Vault CLI uses.
+These are the active variables that the Vault CLI uses:
 
-`VAULT_K3S_ADDR`, `VAULT_K3S_UNSEAL_KEY`, and `VAULT_K3S_TOKEN` are only saved values for the k3s Vault.
+```text
+VAULT_ADDR
+VAULT_UNSEAL_KEY
+VAULT_TOKEN
+```
+
+These are only saved values for the k3s Vault:
+
+```text
+VAULT_K3S_ADDR
+VAULT_K3S_UNSEAL_KEY
+VAULT_K3S_TOKEN
+```
 
 The local Vault variables stay for the Mac.
 
 The k3s Vault variables stay separate.
+
+Do not commit real Vault tokens or unseal keys to Git.
