@@ -4,7 +4,7 @@ This note documents the Ansible role used to install and manage HashiCorp Vault 
 
 ## Vault LXC
 
-The Vault LXC was created by Terraform:
+The Vault LXC is created by Terraform.
 
 ```text
 vault-k3s
@@ -12,7 +12,7 @@ vault-k3s
 Ubuntu 24.04 LXC
 ```
 
-The Ansible inventory was updated with a dedicated `vault` group:
+The Ansible inventory includes a dedicated `vault` group:
 
 ```ini
 [vault]
@@ -24,7 +24,7 @@ ansible_ssh_private_key_file=~/.ssh/id_ed25519
 ansible_python_interpreter=/usr/bin/python3
 ```
 
-Validation was done with:
+Validate connectivity with:
 
 ```bash
 ansible vault -m ping
@@ -60,7 +60,7 @@ The playbook:
     - vault
 ```
 
-## Vault Variables
+## Vault Version
 
 A fixed Vault version is defined in:
 
@@ -68,7 +68,7 @@ A fixed Vault version is defined in:
 ansible/group_vars/all.yaml
 ```
 
-Current value:
+Example:
 
 ```yaml
 vault_version: "1.21.2-1"
@@ -78,18 +78,18 @@ This keeps the Vault install version pinned instead of installing whatever versi
 
 ## Vault Install Role
 
-The Vault role currently does the following:
+The Vault role is responsible for:
 
 ```text
-- installs required apt dependencies
-- adds the HashiCorp GPG key
-- adds the HashiCorp apt repository
-- installs the pinned Vault version
-- creates /opt/vault/data
-- copies the Vault configuration template
-- enables and starts the Vault systemd service
-- installs a local lab auto-unseal script
-- installs and enables a vault-unseal systemd service
+installing required apt dependencies
+adding the HashiCorp GPG key
+adding the HashiCorp apt repository
+installing the pinned Vault version
+creating the Vault data directory
+copying the Vault configuration template
+enabling and starting the Vault systemd service
+installing the local lab auto-unseal script
+installing and enabling the vault-unseal systemd service
 ```
 
 The HashiCorp apt repository task uses:
@@ -104,13 +104,13 @@ instead of the deprecated top-level fact variable.
 
 Vault is configured with file storage for the current lab setup.
 
-Current template:
+Template:
 
 ```text
 ansible/roles/vault/templates/vault.hcl.j2
 ```
 
-Current configuration:
+Configuration:
 
 ```hcl
 storage "file" {
@@ -128,7 +128,7 @@ ui = true
 disable_mlock = true
 ```
 
-The `api_addr` value was added after Vault showed a warning that no API address was configured.
+The `api_addr` value is configured so Vault can advertise its API address correctly.
 
 ## Vault Handler
 
@@ -189,13 +189,13 @@ mode: 0600
 
 The unseal key is not committed to Git.
 
-The key was passed once through Ansible using a runtime variable:
+The key can be passed through Ansible using a runtime variable:
 
 ```bash
 read -s VAULT_K3S_UNSEAL_KEY
 ```
 
-Then the Vault playbook was run with:
+Then run the Vault playbook with:
 
 ```bash
 ansible-playbook playbooks/vault.yaml --extra-vars "vault_unseal_key=${VAULT_K3S_UNSEAL_KEY}"
@@ -253,23 +253,22 @@ Check Vault status from inside the Vault LXC:
 ansible vault -m shell -a "VAULT_ADDR=http://127.0.0.1:8200 vault status"
 ```
 
-Expected current state:
+Expected state:
 
 ```text
-Initialized     true
-Sealed          false
-Storage Type    file
+Initialized true
+Sealed false
 ```
 
 ## Auto-Unseal Validation
 
-Vault was tested with a service restart:
+Vault auto-unseal can be tested with a service restart:
 
 ```bash
 ansible vault -m shell -a "systemctl restart vault && sleep 5 && systemctl restart vault-unseal"
 ```
 
-Then Vault status was checked:
+Then check Vault status:
 
 ```bash
 ansible vault -m shell -a "VAULT_ADDR=http://127.0.0.1:8200 vault status"
@@ -280,8 +279,6 @@ Expected result:
 ```text
 Sealed false
 ```
-
-This confirms that the local lab auto-unseal mechanism works.
 
 ## External Secrets Validation
 
@@ -301,25 +298,10 @@ vault-k3s   Valid   ReadWrite   True
 
 If this shows `InvalidProviderConfig` and the message says `Vault is sealed`, Vault needs to be unsealed or the local unseal service needs to be checked.
 
-## Vault Current Project State
+## Security Notes
 
-Current known state:
-
-```text
-Vault installed
-Vault service running
-Vault API reachable on port 8200
-Vault initialized
-Vault auto-unseal works for this lab
-Vault UI is accessible
-External Secrets Operator connects to Vault through a dedicated token
-ClusterSecretStore is Valid / Ready True
-```
-
-Important:
-
-```text
-Vault root token, ESO token and unseal key are not stored in Git.
-```
+Do not commit real Vault tokens, ESO tokens, or unseal keys to Git.
 
 For this lab, the unseal key is stored only on the Vault LXC for local scripted unseal.
+
+This setup is designed for local lab convenience and should not be treated as a production Vault architecture.
