@@ -2,13 +2,15 @@
 
 This note documents the Ansible roles used to bootstrap Kubernetes platform components.
 
+Ansible is used for the initial bootstrap layer. After the base platform is ready, ongoing Kubernetes platform management gradually moves to Argo CD / GitOps.
+
 ## MetalLB Role
 
 MetalLB was changed from inline `kubectl apply -f -` commands to Ansible Kubernetes modules.
 
 ### Before
 
-The role used:
+The role used direct command execution:
 
 ```yaml
 ansible.builtin.command: helm upgrade --install ...
@@ -17,7 +19,7 @@ ansible.builtin.command: kubectl apply -f -
 
 ### After
 
-The role now uses:
+The role now uses Kubernetes-aware Ansible modules:
 
 ```yaml
 kubernetes.core.helm_repository
@@ -41,7 +43,7 @@ definition: "{{ lookup('template', 'l2-advertisement.yaml.j2') | from_yaml }}"
 
 ## MetalLB Resources
 
-MetalLB still needs these Kubernetes objects after installation:
+MetalLB needs these Kubernetes objects after installation:
 
 ```text
 IPAddressPool
@@ -67,7 +69,7 @@ Traefik was changed from direct Helm commands to Ansible Helm modules.
 
 ### Before
 
-The role used:
+The role used direct command execution:
 
 ```yaml
 ansible.builtin.command: helm repo add ...
@@ -89,13 +91,13 @@ Reason:
 
 Traefik is kept as a minimal bootstrap install through Ansible.
 
-Later, Argo CD can manage Traefik values and configuration from the GitOps layer.
+Future Traefik values and configuration can move to the GitOps layer if needed.
 
 ## Argo CD Role
 
-Argo CD was added as a new Ansible bootstrap role.
+Argo CD was added as an Ansible bootstrap role.
 
-New files added:
+Files:
 
 ```text
 ansible/playbooks/argocd.yaml
@@ -125,7 +127,7 @@ kubernetes.core.helm
 
 ## Argo CD Variables
 
-The Argo CD variables were added to:
+The Argo CD variables are defined in:
 
 ```text
 ansible/group_vars/all.yaml
@@ -142,25 +144,15 @@ argocd_repo_url: https://argoproj.github.io/argo-helm
 argocd_chart_version: 9.5.14
 ```
 
-The selected Helm chart version was:
-
-```text
-9.5.14
-```
-
-This chart installs Argo CD app version:
-
-```text
-v3.4.2
-```
-
 Important note:
 
-`argocd_chart_version` is the Helm chart version, not the Argo CD application version.
+```text
+argocd_chart_version is the Helm chart version, not the Argo CD application version.
+```
 
 ## Argo CD Validation
 
-Pods were checked with:
+Pods can be checked with:
 
 ```bash
 kubectl get pods -n argocd
@@ -178,59 +170,46 @@ argocd-repo-server
 argocd-server
 ```
 
-The Argo CD server service is currently:
+The Argo CD server service is:
 
 ```text
-argocd-server   ClusterIP   80/TCP,443/TCP
+argocd-server
 ```
 
-Temporary UI access:
-
-```bash
-kubectl port-forward svc/argocd-server -n argocd 8080:443
-```
-
-Open:
-
-```text
-https://localhost:8080
-```
+Argo CD is initially installed by Ansible, and then managed by Argo CD itself from the GitOps layer.
 
 ## cert-manager Role
 
-cert-manager was added as a new Ansible bootstrap role.
+cert-manager was originally added as an Ansible bootstrap role.
 
-New files added:
+Files:
 
 ```text
 ansible/playbooks/cert_manager.yaml
 ansible/roles/cert_manager/tasks/main.yaml
 ```
 
-The playbook runs locally:
+The role was used for the initial installation of cert-manager.
 
-```yaml
----
-# Runs locally and requires Helm + kubectl configured on the development machine
-- name: install cert-manager
-  hosts: localhost
-  connection: local
-  gather_facts: false
-  become: false
-  roles:
-    - cert_manager
+Current direction:
+
+```text
+cert-manager is managed by Argo CD after the initial bootstrap.
 ```
 
-The cert-manager role uses:
+The Ansible role is kept in the repository for bootstrap history and reference, but it should not be used for regular ongoing management.
 
-```yaml
-kubernetes.core.helm_repository
-kubernetes.core.helm
+Current GitOps files for cert-manager:
+
+```text
+_kubernetes/applications/cert-manager.yaml
+_kubernetes/applications/cert-manager-config.yaml
+_kubernetes/platform/cert-manager/
 ```
 
 ## cert-manager Variables
 
-The cert-manager variables were added to:
+The cert-manager variables are still defined in:
 
 ```text
 ansible/group_vars/all.yaml
@@ -248,17 +227,7 @@ cert_manager_chart_version: 1.20.2
 cert_manager_crds_enabled: true
 ```
 
-The selected Helm chart version was:
-
-```text
-1.20.2
-```
-
-This chart installs cert-manager app version:
-
-```text
-v1.20.2
-```
+These values belong to the original Ansible bootstrap role.
 
 Important note:
 
@@ -266,11 +235,11 @@ Important note:
 cert_manager_crds_enabled: true
 ```
 
-is required so the cert-manager CRDs are installed together with the Helm chart.
+was required so the cert-manager CRDs were installed together with the Helm chart during the initial bootstrap flow.
 
 ## cert-manager Validation
 
-Pods were checked with:
+cert-manager can be checked with:
 
 ```bash
 kubectl get pods -n cert-manager
@@ -284,17 +253,23 @@ cert-manager-cainjector
 cert-manager-webhook
 ```
 
-The Helm release was checked with:
+ClusterIssuers can be checked with:
 
 ```bash
-helm list -n cert-manager
+kubectl get clusterissuer
 ```
 
-Result:
+Expected issuers:
 
 ```text
-NAME            NAMESPACE       REVISION        STATUS      CHART                  APP VERSION
-cert-manager    cert-manager    1               deployed    cert-manager-v1.20.2   v1.20.2
+selfsigned-issuer
+internal-ca
+```
+
+Expected state:
+
+```text
+Ready = True
 ```
 
 ## Final State
@@ -313,25 +288,22 @@ Traefik:
 ```text
 Helm install managed by kubernetes.core.helm
 No values file in Ansible for now
-Future values should likely move to Argo CD / GitOps
+Future values can move to Argo CD / GitOps if needed
 ```
 
 Argo CD:
 
 ```text
-Helm install managed by kubernetes.core.helm
+Initial Helm install managed by kubernetes.core.helm
 Installed into argocd namespace
-argocd-server currently exposed as ClusterIP
-Temporary UI access is done with kubectl port-forward
-Current self-management is now handled from Argo CD / GitOps
+Ongoing self-management is handled from Argo CD / GitOps
 ```
 
 cert-manager:
 
 ```text
-Helm install managed by kubernetes.core.helm
-Installed into cert-manager namespace
-CRDs installed through crds.enabled=true
-cert-manager, cainjector and webhook pods are running
-Future management should move to Argo CD / GitOps
+Originally installed by Ansible during bootstrap
+Currently managed by Argo CD
+Internal CA configuration is managed from the GitOps layer
+Ansible role is kept for bootstrap history and reference
 ```
