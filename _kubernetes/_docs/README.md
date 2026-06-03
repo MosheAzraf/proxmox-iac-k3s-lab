@@ -2,6 +2,8 @@
 
 This folder contains the Kubernetes / GitOps documentation for the `proxmox-iac-k3s-lab` project.
 
+The Kubernetes layer is managed through Argo CD from the `_kubernetes` directory.
+
 ## Files
 
 ```text
@@ -11,17 +13,22 @@ external-secrets.md
 runbook.md
 ```
 
-## Current Status
+## Documentation Index
 
-```text
-root-app: Synced / Healthy
-argocd: Synced / Healthy
-external-secrets: Synced / Healthy
-external-secrets-config: Synced / Healthy
-```
+1. [GitOps](gitops.md)
+   General notes about the GitOps structure and how Kubernetes resources are organized.
 
-## Next Planned Phase
+2. [Argo CD](argocd.md)
+   Notes about Argo CD, self-management, and application management.
 
-```text
-Move cert-manager management into GitOps.
-```
+3. [External Secrets](external-secrets.md)
+   Notes about External Secrets Operator and secret management integration.
+
+4. [Runbook](runbook.md)
+   Operational commands and workflow notes for the Kubernetes / GitOps layer.
+
+## Scope
+
+The Kubernetes / GitOps layer contains the manifests and Argo CD applications used to manage the cluster platform from Git.
+
+This layer is intended to hold Kubernetes platform configuration and application definitions after the initial bootstrap phase is complete.

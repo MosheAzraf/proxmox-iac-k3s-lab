@@ -2,6 +2,8 @@
 
 This folder contains the Terraform documentation for the `proxmox-iac-k3s-lab` project.
 
+The Terraform layer is responsible for provisioning the Proxmox infrastructure used by the lab.
+
 ## Files
 
 ```text
@@ -11,24 +13,22 @@ vault-integration.md
 runbook.md
 ```
 
-## Current Terraform Infrastructure
+## Documentation Index
 
-Terraform currently creates:
+1. [Terraform Overview](terraform-overview.md)
+   General overview of the Terraform layer and how it fits into the project.
 
-```text
-k3s-controller-01   10.0.20.101   VM ID 201
-k3s-worker-01       10.0.20.102   VM ID 202
-vault-k3s           10.0.20.110   LXC ID 210
-```
+2. [Proxmox Resources](proxmox-resources.md)
+   Notes about the Proxmox resources managed by Terraform.
 
-## Current Status
+3. [Vault Integration](vault-integration.md)
+   Notes about how Terraform retrieves Proxmox credentials from Vault.
 
-Terraform:
+4. [Runbook](runbook.md)
+   Operational commands and workflow notes for the Terraform layer.
 
-```text
-Successfully provisions k3s VMs
-Successfully provisions the Vault LXC
-Retrieves Proxmox credentials from Vault
-Uses SSH public key authentication
-Reports a clean plan with no pending changes
-```
+## Scope
+
+Terraform is used as the infrastructure provisioning layer.
+
+It manages the Proxmox resources required before the servers can be configured by Ansible and later managed through the Kubernetes / GitOps workflow.

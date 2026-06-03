@@ -2,6 +2,8 @@
 
 This folder contains the Ansible documentation for the `proxmox-iac-k3s-lab` project.
 
+The Ansible layer is responsible for server configuration and initial cluster bootstrap.
+
 ## Files
 
 ```text
@@ -12,31 +14,25 @@ vault-env-vars.md
 runbook.md
 ```
 
-## Current Status
+## Documentation Index
 
-Ansible is used for the initial bootstrap layer.
+1. [Ansible Overview](ansible-overview.md)
+   General overview of the Ansible layer and how it fits into the project.
 
-Current Ansible bootstrap includes:
+2. [Kubernetes Bootstrap](kubernetes-bootstrap.md)
+   Notes about the k3s bootstrap process and initial Kubernetes setup.
 
-```text
-common node settings
-k3s controller
-k3s worker
-MetalLB
-Traefik
-Argo CD
-cert-manager
-Vault LXC configuration
-```
+3. [Vault](vault.md)
+   Notes about the Vault setup managed by Ansible.
 
-## Current Direction
+4. [Vault Environment Variables](vault-env-vars.md)
+   Notes about the local environment variables used for Vault-related workflows.
 
-Ansible handles bootstrap.
+5. [Runbook](runbook.md)
+   Operational commands and workflow notes for the Ansible layer.
 
-Argo CD gradually takes over GitOps-managed platform components.
+## Scope
 
-Next planned phase:
+Ansible is used as the bootstrap layer.
 
-```text
-Move cert-manager management from Ansible to Argo CD.
-```
+It configures the servers, installs k3s, and prepares the initial platform components required before the Kubernetes / GitOps layer can take over ongoing management.
