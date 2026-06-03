@@ -2,6 +2,12 @@
 
 This note documents how Terraform reads Proxmox credentials from Vault.
 
+## Purpose
+
+Terraform uses Vault to avoid storing Proxmox credentials directly in the repository.
+
+The Proxmox provider receives its endpoint and API token from Vault during Terraform execution.
+
 ## Providers
 
 Terraform uses:
@@ -11,11 +17,11 @@ HashiCorp Vault provider
 Proxmox provider: bpg/proxmox
 ```
 
-Terraform reads Proxmox credentials directly from Vault.
-
 ## Vault Secret Location
 
-Terraform reads the following values from Vault:
+Terraform reads the Proxmox credentials from Vault.
+
+Expected location:
 
 ```text
 mount: secret
@@ -30,11 +36,17 @@ proxmox_token_id
 proxmox_token_secret
 ```
 
-## Usage
+## Usage Flow
 
-The Proxmox provider receives its endpoint and API token from Vault instead of hardcoded values.
-
-This keeps Proxmox credentials out of Terraform files.
+```text
+Vault
+   ↓
+Terraform Vault provider
+   ↓
+Proxmox provider configuration
+   ↓
+Proxmox resource provisioning
+```
 
 ## Security Rule
 
@@ -42,12 +54,4 @@ Do not commit real Proxmox tokens or Vault tokens to Git.
 
 The repository should contain only Terraform code and non-secret configuration.
 
-## Current Status
-
-Terraform is successfully connected to Proxmox through Vault.
-
-Terraform plan was checked and showed:
-
-```text
-No changes. Your infrastructure matches the configuration.
-```
+Terraform state should also remain outside Git, because it can contain sensitive or environment-specific data.
