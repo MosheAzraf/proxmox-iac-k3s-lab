@@ -4,20 +4,26 @@ This note documents the Ansible structure and responsibility split for the `prox
 
 ## Goal
 
-The Ansible layer is responsible for initial bootstrap.
+The Ansible layer is responsible for the initial bootstrap of the servers and the base Kubernetes platform.
 
-Current Ansible bootstrap includes:
+After the bootstrap phase, Argo CD manages the GitOps-owned Kubernetes platform components from the `_kubernetes` directory.
+
+## Ansible Scope
+
+Ansible is used for:
 
 ```text
 common node settings
-k3s controller
-k3s worker
-MetalLB
-Traefik
-Argo CD
-cert-manager
+k3s controller installation
+k3s worker installation
+MetalLB bootstrap
+Traefik bootstrap
+Argo CD bootstrap
 Vault LXC configuration
+Vault local lab auto-unseal
 ```
+
+cert-manager was originally installed during bootstrap by Ansible, but it is now managed by Argo CD.
 
 ## Required Ansible Collection
 
@@ -90,22 +96,28 @@ Current approach:
 
 ```text
 Ansible:
-- install common node settings
+- configure base server settings
 - install k3s controller
 - install k3s worker
 - bootstrap MetalLB
 - bootstrap Traefik
 - bootstrap Argo CD
-- bootstrap cert-manager
 - configure Vault LXC
+- configure local lab auto-unseal for Vault
 
 Argo CD:
 - manage itself from Git
+- manage cert-manager
+- manage cert-manager internal CA configuration
 - manage External Secrets Operator
 - manage External Secrets configuration
-- gradually take over platform components
+- manage GitOps-owned Kubernetes platform components
 ```
 
-Important note:
+## Important Notes
 
-If Argo CD later takes ownership of Helm releases that were installed by Ansible, avoid running the matching Ansible role repeatedly unless it is intentionally still part of bootstrap.
+Ansible is the bootstrap layer, not the long-term GitOps management layer.
+
+If Argo CD takes ownership of components that were initially installed by Ansible, avoid running the matching Ansible role repeatedly unless the action is intentional.
+
+The Vault auto-unseal setup is for local lab convenience only. It is not intended to represent a production-grade Vault deployment.
