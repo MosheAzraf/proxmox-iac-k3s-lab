@@ -6,9 +6,7 @@ This note documents the Terraform layer for the `proxmox-iac-k3s-lab` project.
 
 Infrastructure as Code project for creating a home or lab k3s environment on Proxmox.
 
-The project uses Terraform to create virtual machines and infrastructure resources in Proxmox.
-
-Ansible is then used to prepare the nodes, install k3s, and bootstrap the cluster components.
+Terraform is used to provision the infrastructure resources required before the servers are configured by Ansible and later managed through the Kubernetes / GitOps workflow.
 
 ## Terraform Structure
 
@@ -30,51 +28,59 @@ HashiCorp Vault provider
 Proxmox provider: bpg/proxmox
 ```
 
-Terraform reads Proxmox credentials directly from Vault.
+Terraform reads Proxmox credentials from Vault instead of storing them directly in the repository.
 
-## Current Infrastructure
+## Infrastructure Scope
 
-Terraform currently creates:
+Terraform is responsible for provisioning the Proxmox infrastructure layer.
+
+This includes:
 
 ```text
-Ubuntu VM: k3s-controller-01   10.0.20.101
-Ubuntu VM: k3s-worker-01       10.0.20.102
-Ubuntu 24.04 LXC: vault-k3s    10.0.20.110
+k3s virtual machines
+Vault LXC container
+network configuration
+cloud-init configuration
+SSH public key access
+Proxmox resource settings
 ```
 
-## Current Infrastructure Layout
+## Infrastructure Layout
 
 ```text
 Proxmox
 │
-├── VM 201
-│   └── k3s-controller-01
+├── k3s controller VM
 │
-├── VM 202
-│   └── k3s-worker-01
+├── k3s worker VM
 │
-└── LXC 210
-    └── vault-k3s
+└── Vault LXC
 ```
 
-## Current Status
-
-Terraform:
+Specific resource details are documented in:
 
 ```text
-Successfully provisions k3s VMs
-Successfully provisions the Vault LXC
-Retrieves Proxmox credentials from Vault
-Uses SSH public key authentication
-Reports a clean plan with no pending changes
+terraform/_docs/proxmox-resources.md
 ```
 
-## Next Related Layers
+## Secret Handling
+
+Terraform retrieves Proxmox credentials from Vault.
+
+The expected Vault integration is documented in:
+
+```text
+terraform/_docs/vault-integration.md
+```
+
+Real Proxmox tokens, Vault tokens, and Terraform state files should not be committed to Git.
+
+## Related Layers
 
 After Terraform provisions the infrastructure:
 
 ```text
-Ansible configures the nodes and installs platform components.
-Argo CD manages the GitOps layer.
-Vault provides secrets for Terraform and External Secrets Operator.
+Ansible configures the servers and bootstraps the cluster.
+Argo CD manages the Kubernetes / GitOps layer.
+Vault provides secrets for infrastructure and cluster integrations.
 ```
