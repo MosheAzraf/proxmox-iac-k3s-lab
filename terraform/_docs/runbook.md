@@ -44,6 +44,12 @@ No changes. Your infrastructure matches the configuration.
 terraform apply
 ```
 
+## Check Terraform Outputs
+
+```bash
+terraform output
+```
+
 ## Current Terraform Resources
 
 ```text

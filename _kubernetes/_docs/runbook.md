@@ -228,7 +228,7 @@ Use only if the Kubernetes Secret was deleted or needs to be replaced.
 ```bash
 kubectl create secret generic vault-token \
   -n external-secrets \
-  --from-literal=token="PASTE_TOKEN_HERE"
+  --from-literal=token="<vault-token>"
 ```
 
 Do not commit the real token to Git.

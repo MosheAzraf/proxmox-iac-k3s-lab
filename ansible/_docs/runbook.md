@@ -1,136 +1,119 @@
-# Ansible Overview
+# Ansible Runbook
 
-This note documents the Ansible structure and responsibility split for the `proxmox-iac-k3s-lab` project.
+This file contains short operational commands for the Ansible layer.
 
-## Goal
+## Go to Ansible Directory
 
-The Ansible layer is responsible for initial bootstrap.
-
-Current Ansible bootstrap includes:
-
-```text
-common node settings
-k3s controller
-k3s worker
-MetalLB
-Traefik
-Argo CD
-cert-manager initial installation
-Vault LXC configuration
+```bash
+cd ansible
 ```
 
-cert-manager is installed during the initial bootstrap by Ansible.
+## Check Inventory
 
-After the initial installation, cert-manager is managed by Argo CD.
+```bash
+ansible-inventory -i inventory.ini --list
+```
 
-## Required Ansible Collection
+## Ping All Hosts
 
-Install:
+```bash
+ansible all -i inventory.ini -m ping
+```
+
+## Run Common Node Setup
+
+```bash
+ansible-playbook playbooks/common.yaml
+```
+
+## Install k3s Controller
+
+```bash
+ansible-playbook playbooks/k3s_controller.yaml
+```
+
+## Install k3s Worker
+
+```bash
+ansible-playbook playbooks/k3s_worker.yaml
+```
+
+## Install MetalLB
+
+```bash
+ansible-playbook playbooks/metallb.yaml
+```
+
+## Install Traefik
+
+```bash
+ansible-playbook playbooks/traefik.yaml
+```
+
+## Install Argo CD
+
+```bash
+ansible-playbook playbooks/argocd.yaml
+```
+
+## Configure Vault LXC
+
+```bash
+ansible-playbook playbooks/vault.yaml
+```
+
+## Run Vault Playbook with Unseal Key
+
+Use this only when configuring or updating the local lab auto-unseal setup.
+
+```bash
+read -s VAULT_K3S_UNSEAL_KEY
+ansible-playbook playbooks/vault.yaml --extra-vars "vault_unseal_key=${VAULT_K3S_UNSEAL_KEY}"
+```
+
+## Check Vault Status
+
+```bash
+ansible vault -m shell -a "VAULT_ADDR=http://127.0.0.1:8200 vault status"
+```
+
+Expected state:
+
+```text
+Initialized true
+Sealed false
+```
+
+## Required Collection
 
 ```bash
 ansible-galaxy collection install kubernetes.core
 ```
 
-Used modules:
-
-```text
-kubernetes.core.helm_repository
-kubernetes.core.helm
-kubernetes.core.k8s
-```
-
 ## Optional Helm Plugin
-
-To avoid Helm idempotency warnings and improve change detection:
 
 ```bash
 helm plugin install https://github.com/databus23/helm-diff
 ```
 
-This removes warnings like:
-
-```text
-The default idempotency check can fail to report changes in certain cases.
-Install helm diff >= 3.4.1 for better results.
-```
-
 ## KUBECONFIG
 
-The local machine previously had multiple kubeconfig files configured:
-
-```bash
-$HOME/.kube/config:$HOME/.kube/config-pi
-```
-
-This caused Ansible to try connecting to an old Kubernetes API address.
-
-The fix was to set:
+Use the local kubeconfig for the current Proxmox k3s cluster:
 
 ```bash
 export KUBECONFIG="$HOME/.kube/config"
 ```
 
-This was added to:
-
-```text
-~/.zshrc
-```
-
-After reloading the shell:
-
-```bash
-source ~/.zshrc
-```
-
-The active kubeconfig points to the current Proxmox k3s cluster:
+Expected Kubernetes API endpoint:
 
 ```text
 https://10.0.20.101:6443
 ```
 
-## Current Responsibility Split
+## Responsibility Note
 
-Current approach:
+Ansible is used for bootstrap.
 
-```text
-Ansible:
-- install common node settings
-- install k3s controller
-- install k3s worker
-- bootstrap MetalLB
-- bootstrap Traefik
-- bootstrap Argo CD
-- bootstrap cert-manager during initial setup
-- configure Vault LXC
-- configure local lab auto-unseal for Vault
+Argo CD manages GitOps-owned Kubernetes platform components after the bootstrap phase.
 
-Argo CD:
-- manage itself from Git
-- manage cert-manager after initial bootstrap
-- manage cert-manager internal CA configuration
-- manage External Secrets Operator
-- manage External Secrets configuration
-- gradually take over platform components
-```
-
-Important note:
-
-If Argo CD takes ownership of Helm releases that were initially installed by Ansible, avoid running the matching Ansible role repeatedly unless it is intentionally still part of bootstrap.
-
-## Vault Auto-Unseal Note
-
-Vault uses a local scripted unseal mechanism in this lab.
-
-This is only for local lab convenience, so Vault can recover automatically after restart and External Secrets Operator can reconnect without manual unseal.
-
-The unseal key is not stored in Git.
-
-It is stored only on the Vault LXC at:
-
-```text
-/etc/vault.d/unseal.key
-```
-
-This approach is not recommended for production.
-
-Production environments should use external auto-unseal with a KMS or HSM provider.
+Avoid repeatedly running Ansible roles for components that are already managed by Argo CD, unless the action is intentional.
