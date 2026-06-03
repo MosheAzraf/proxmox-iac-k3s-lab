@@ -94,7 +94,7 @@ Command:
 ```bash
 kubectl create secret generic vault-token \
   -n external-secrets \
-  --from-literal=token="PASTE_TOKEN_HERE"
+  --from-literal=token="<vault-token>"
 ```
 
 The secret exists in:

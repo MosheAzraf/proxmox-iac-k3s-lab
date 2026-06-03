@@ -24,7 +24,7 @@ Metadata: Read-only
 The token was added to Argo CD through the UI:
 
 ```text
-Settings → Repositories → Connect Repo
+Settings -> Repositories -> Connect Repo
 ```
 
 Connection type:
@@ -43,16 +43,12 @@ github_proxmox_iac_k3s_lab_token
 
 ## Root App
 
-The Root App was applied manually:
+The Root App is the first manual GitOps entry point.
+
+It is applied once with:
 
 ```bash
-kubectl apply -f bootstrap/root-app.yaml
-```
-
-Result:
-
-```text
-application.argoproj.io/root-app created
+kubectl apply -f _kubernetes/bootstrap/root-app.yaml
 ```
 
 The Root App points to:
@@ -65,9 +61,9 @@ Its job is to create and manage child Argo CD Applications from that directory.
 
 ## Argo CD Self-Management
 
-The first GitOps goal was to make Argo CD self-managed.
+Argo CD is managed through Argo CD itself after the initial bootstrap.
 
-Initial files created:
+Main files:
 
 ```text
 _kubernetes/bootstrap/root-app.yaml
@@ -75,18 +71,11 @@ _kubernetes/applications/argocd.yaml
 _kubernetes/platform/argocd/values.yaml
 ```
 
-The first child application is:
-
-```text
-argocd
-```
-
-It uses the Argo CD Helm chart:
+The Argo CD Application uses the official Helm chart:
 
 ```text
 repoURL: https://argoproj.github.io/argo-helm
 chart: argo-cd
-targetRevision: 9.5.14
 ```
 
 It also references the local values file from the Git repository:
@@ -95,10 +84,9 @@ It also references the local values file from the Git repository:
 _kubernetes/platform/argocd/values.yaml
 ```
 
-Current values:
+Current values include:
 
 ```yaml
-# Argo CD Helm values
 configs:
   params:
     server.insecure: true
@@ -139,7 +127,7 @@ This keeps the Helm values file separate from regular Kubernetes manifests.
 
 ## Internal TLS Certificate
 
-A cert-manager Certificate was created for Argo CD:
+A cert-manager Certificate is used for Argo CD:
 
 ```text
 argocd-server-tls
@@ -163,10 +151,16 @@ Validation command:
 kubectl get certificate -n argocd
 ```
 
-Expected result:
+Expected certificate:
 
 ```text
-argocd-server-tls   True   argocd-server-tls
+argocd-server-tls
+```
+
+Expected state:
+
+```text
+Ready = True
 ```
 
 ## Traefik IngressRoute
@@ -185,16 +179,10 @@ Hostname:
 argocd.home.lab
 ```
 
-The internal DNS record is configured on the MikroTik router:
+The internal DNS wildcard points to Traefik:
 
 ```text
-*.home.lab → 10.0.20.200
-```
-
-Traefik LoadBalancer IP:
-
-```text
-10.0.20.200
+*.home.lab -> 10.0.20.200
 ```
 
 The IngressRoute sends traffic to the existing Argo CD service:
@@ -215,7 +203,7 @@ Validation command:
 kubectl get ingressroute -n argocd
 ```
 
-Expected result:
+Expected resource:
 
 ```text
 argocd
@@ -229,51 +217,33 @@ Argo CD can be accessed through:
 https://argocd.home.lab
 ```
 
-The route was tested with:
+If DNS resolution fails in the browser, test directly with:
 
 ```bash
 curl -vk --resolve argocd.home.lab:443:10.0.20.200 https://argocd.home.lab
 ```
 
-The response returned:
+Expected result:
 
 ```text
 HTTP/2 200
 <title>Argo CD</title>
 ```
 
-This confirms that DNS, Traefik, TLS routing, and Argo CD are working.
+A browser certificate warning is expected until the internal root CA is trusted by the local machine.
 
-The internal CA is not trusted by the Mac yet, so a browser certificate warning is expected.
+## Application Health
 
-## Current Sync Status
-
-Applications were checked with:
+Argo CD applications can be checked with:
 
 ```bash
 kubectl get applications -n argocd
 ```
 
-Current applications:
+Expected general state for platform applications:
 
 ```text
-root-app
-argocd
-cert-manager
-cert-manager-config
-external-secrets
-external-secrets-config
+Synced / Healthy
 ```
 
-Current working state:
-
-```text
-root-app                  Synced / Healthy
-argocd                    Synced / Healthy
-cert-manager              Synced / Healthy
-cert-manager-config       Synced / Healthy
-external-secrets          Synced / Healthy
-external-secrets-config   Synced / Healthy
-```
-
-This means the current GitOps setup is working.
+The exact list of applications may change as the lab evolves.
