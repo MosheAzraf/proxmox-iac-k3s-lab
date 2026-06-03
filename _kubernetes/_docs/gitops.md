@@ -8,21 +8,9 @@ The goal is to keep the Kubernetes / GitOps layer clean, separated by responsibi
 
 The Ansible layer is responsible for initial bootstrap.
 
-Current Ansible bootstrap includes:
-
-```text
-common node settings
-k3s controller
-k3s worker
-MetalLB
-Traefik
-Argo CD
-Vault
-```
-
-cert-manager was originally installed by Ansible, but it has now been moved to Argo CD management.
-
 After bootstrap, Argo CD manages the GitOps layer from the `_kubernetes` directory.
+
+cert-manager was originally installed by Ansible, but it has been moved to Argo CD management.
 
 ## Current Structure
 
@@ -56,7 +44,6 @@ _kubernetes/
     │   └── values.yaml
     └── external-secrets/
         ├── cluster-secret-store.yaml
-        ├── demo-external-secret.yaml
         └── values.yaml
 ```
 
@@ -156,12 +143,12 @@ https://argocd.home.lab
 The internal DNS wildcard points to Traefik:
 
 ```text
-*.home.lab → 10.0.20.200
+*.home.lab -> 10.0.20.200
 ```
 
 ## cert-manager
 
-cert-manager is now managed by Argo CD.
+cert-manager is managed by Argo CD.
 
 Application file:
 
@@ -221,10 +208,9 @@ Platform files:
 ```text
 _kubernetes/platform/external-secrets/values.yaml
 _kubernetes/platform/external-secrets/cluster-secret-store.yaml
-_kubernetes/platform/external-secrets/demo-external-secret.yaml
 ```
 
-The `vault-token` Kubernetes Secret is still created manually and is not committed to Git.
+The `vault-token` Kubernetes Secret is created manually and is not committed to Git.
 
 ## Design Decision
 
@@ -262,13 +248,10 @@ This keeps Helm values separate from Kubernetes manifests and avoids accidental 
 
 ## Current GitOps State
 
-```text
-root-app: Synced / Healthy
-argocd: Synced / Healthy
-cert-manager: Synced / Healthy
-cert-manager-config: Synced / Healthy
-external-secrets: Synced / Healthy
-external-secrets-config: Synced / Healthy
-```
+The current GitOps setup is working and is managed through Argo CD.
 
-The current GitOps setup is working.
+Expected general state for platform applications:
+
+```text
+Synced / Healthy
+```

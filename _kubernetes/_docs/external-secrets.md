@@ -17,9 +17,9 @@ Vault UI/API address:
 http://10.0.20.110:8200
 ```
 
-Vault was initialized and unsealed manually.
+Vault was initialized and unsealed manually during the initial setup.
 
-The following were saved outside Git:
+The following values are saved outside Git:
 
 ```text
 Unseal Key
@@ -33,7 +33,7 @@ Important:
 No Vault tokens or unseal keys are committed to Git.
 ```
 
-The ESO token was also saved in Proxmox Notes for lab convenience.
+The ESO token may be stored locally outside the repository for lab convenience.
 
 ## External Secrets Operator Application
 
@@ -57,12 +57,6 @@ Chart:
 external-secrets
 ```
 
-Version used:
-
-```text
-2.5.0
-```
-
 Because ESO CRDs are large, the Argo CD Application uses:
 
 ```yaml
@@ -71,15 +65,11 @@ syncOptions:
   - ServerSideApply=true
 ```
 
-This fixed the Kubernetes annotation size error on the large CRDs:
-
-```text
-metadata.annotations: Too long: may not be more than 262144 bytes
-```
+This avoids Kubernetes annotation size issues on large CRDs.
 
 ## External Secrets Config Application
 
-A second Argo CD Application was added to manage the ESO configuration.
+A second Argo CD Application manages the ESO configuration.
 
 Application file:
 
@@ -93,18 +83,13 @@ It points to:
 _kubernetes/platform/external-secrets
 ```
 
-This application manages:
-
-```text
-ClusterSecretStore / vault-k3s
-ExternalSecret / demo-secret
-```
+This application currently manages the Vault-backed ClusterSecretStore configuration.
 
 ## Vault Token Kubernetes Secret
 
-The Vault token for ESO was created manually as a Kubernetes Secret.
+The Vault token for ESO is created manually as a Kubernetes Secret.
 
-Command used:
+Command:
 
 ```bash
 kubectl create secret generic vault-token \
@@ -163,57 +148,25 @@ It references the manually created Kubernetes Secret:
 vault-token
 ```
 
-Validation result:
+Expected validation result:
 
 ```text
-NAME        AGE   STATUS   CAPABILITIES   READY
-vault-k3s   7s    Valid    ReadWrite      True
-```
-
-## Demo ExternalSecret
-
-A test secret was created in the Vault UI under:
-
-```text
-secret/apps/demo
-```
-
-The demo ExternalSecret is managed by Argo CD.
-
-File:
-
-```text
-_kubernetes/platform/external-secrets/demo-external-secret.yaml
-```
-
-It creates a Kubernetes Secret:
-
-```text
-name: demo-secret
-namespace: default
-```
-
-Validation result:
-
-```text
-NAME          STORETYPE            STORE       REFRESH INTERVAL   STATUS         READY
-demo-secret   ClusterSecretStore   vault-k3s   1m                 SecretSynced   True
-```
-
-The Kubernetes Secret was created successfully:
-
-```text
-NAME          TYPE     DATA
-demo-secret   Opaque   2
+vault-k3s   Valid   ReadWrite   True
 ```
 
 ## End-to-End Flow
 
 ```text
-Vault -> External Secrets Operator -> Kubernetes Secret -> Argo CD GitOps
+Vault
+   ↓
+External Secrets Operator
+   ↓
+Kubernetes Secrets
+   ↓
+GitOps-managed applications
 ```
 
-The only intentionally manual secret is:
+The only intentionally manual secret in this flow is:
 
 ```text
 vault-token

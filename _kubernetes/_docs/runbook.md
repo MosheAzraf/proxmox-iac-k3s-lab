@@ -8,15 +8,21 @@ This file contains short operational commands for the Kubernetes / GitOps layer.
 kubectl get applications -n argocd
 ```
 
-Expected current state:
+Expected applications:
 
 ```text
-root-app                  Synced / Healthy
-argocd                    Synced / Healthy
-cert-manager              Synced / Healthy
-cert-manager-config       Synced / Healthy
-external-secrets          Synced / Healthy
-external-secrets-config   Synced / Healthy
+root-app
+argocd
+cert-manager
+cert-manager-config
+external-secrets
+external-secrets-config
+```
+
+Expected general state:
+
+```text
+Synced / Healthy
 ```
 
 ## Open Argo CD UI with Port Forward
@@ -88,10 +94,16 @@ Expected Traefik LoadBalancer IP:
 kubectl get certificate -n argocd
 ```
 
-Expected:
+Expected certificate:
 
 ```text
-argocd-server-tls   True   argocd-server-tls
+argocd-server-tls
+```
+
+Expected state:
+
+```text
+Ready = True
 ```
 
 ## Check Argo CD IngressRoute
@@ -100,7 +112,7 @@ argocd-server-tls   True   argocd-server-tls
 kubectl get ingressroute -n argocd
 ```
 
-Expected:
+Expected resource:
 
 ```text
 argocd
@@ -126,11 +138,17 @@ cert-manager-webhook
 kubectl get clusterissuer
 ```
 
-Expected:
+Expected issuers:
 
 ```text
-selfsigned-issuer   True
-internal-ca         True
+selfsigned-issuer
+internal-ca
+```
+
+Expected state:
+
+```text
+Ready = True
 ```
 
 ## Check Internal Root CA
@@ -139,10 +157,16 @@ internal-ca         True
 kubectl get certificate -n cert-manager
 ```
 
-Expected:
+Expected certificate:
 
 ```text
-internal-root-ca   True   internal-root-ca
+internal-root-ca
+```
+
+Expected state:
+
+```text
+Ready = True
 ```
 
 Check the generated Secret:
@@ -195,30 +219,6 @@ Expected:
 
 ```text
 vault-k3s   Valid   ReadWrite   True
-```
-
-## Check Demo ExternalSecret
-
-```bash
-kubectl get externalsecret -n default
-```
-
-Expected:
-
-```text
-demo-secret   ClusterSecretStore   vault-k3s   SecretSynced   True
-```
-
-## Check Demo Kubernetes Secret
-
-```bash
-kubectl get secret demo-secret -n default
-```
-
-Expected:
-
-```text
-demo-secret   Opaque   2
 ```
 
 ## Recreate Vault Token Secret for ESO
