@@ -1,34 +1,49 @@
-# Kubernetes / GitOps Docs
+# Kubernetes / GitOps
 
-This folder contains the Kubernetes / GitOps documentation for the `proxmox-iac-k3s-lab` project.
+This directory is the GitOps source for the cluster. Ansible performs the
+initial bootstrap; Argo CD manages the resources declared here afterward.
 
-The Kubernetes layer is managed through Argo CD from the `_kubernetes` directory.
+## Layout
 
-## Files
+- `bootstrap/root-app.yaml` - one-time Argo CD entry point.
+- `applications/` - Argo CD `Application` resources.
+- `platform/` - Helm values and component manifests.
 
-```text
-gitops.md
-argocd.md
-external-secrets.md
-runbook.md
+The manifests themselves are the source of truth for versions, namespaces,
+repository URLs, and configuration.
+
+## Bootstrap
+
+After Ansible has installed Argo CD and the local kubeconfig is active:
+
+```bash
+kubectl apply -f _kubernetes/bootstrap/root-app.yaml
 ```
 
-## Documentation Index
+Argo CD then discovers and reconciles everything under `applications/`.
 
-1. [GitOps](gitops.md)
-   General notes about the GitOps structure and how Kubernetes resources are organized.
+## Secrets
 
-2. [Argo CD](argocd.md)
-   Notes about Argo CD, self-management, and application management.
+Secrets are not stored in Git. External Secrets reads from Vault through the
+`ClusterSecretStore` in `platform/external-secrets/`.
 
-3. [External Secrets](external-secrets.md)
-   Notes about External Secrets Operator and secret management integration.
+Create the Vault authentication secret manually in the namespace referenced by
+that manifest:
 
-4. [Runbook](runbook.md)
-   Operational commands and workflow notes for the Kubernetes / GitOps layer.
+```bash
+kubectl create secret generic vault-token \
+  --from-literal=token="$VAULT_TOKEN" \
+  --namespace external-secrets
+```
 
-## Scope
+## Operations
 
-The Kubernetes / GitOps layer contains the manifests and Argo CD applications used to manage the cluster platform from Git.
+```bash
+kubectl get applications -n argocd
+kubectl get pods -A
+kubectl describe application <name> -n argocd
+```
 
-This layer is intended to hold Kubernetes platform configuration and application definitions after the initial bootstrap phase is complete.
+Make ongoing platform changes in `applications/` or `platform/` and let Argo CD
+reconcile them. Do not manage GitOps-owned components with their old Ansible
+playbooks.

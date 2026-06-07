@@ -1,38 +1,46 @@
-# Ansible Docs
+# Ansible
 
-This folder contains the Ansible documentation for the `proxmox-iac-k3s-lab` project.
+Ansible configures the Terraform-provisioned hosts and bootstraps k3s, Vault,
+and the services required before Argo CD takes ownership.
 
-The Ansible layer is responsible for server configuration and initial cluster bootstrap.
+## Source Of Truth
 
-## Files
+- `inventory.ini` - hosts and connection settings.
+- `group_vars/all.yaml` - shared versions and configuration.
+- `playbooks/` - runnable entry points.
+- `roles/` - implementation.
 
-```text
-ansible-overview.md
-kubernetes-bootstrap.md
-vault.md
-vault-env-vars.md
-runbook.md
+Read these files for current addresses, versions, and component settings.
+
+## Prerequisites
+
+The control machine needs Ansible, Helm, `kubectl`, an active kubeconfig, and:
+
+```bash
+ansible-galaxy collection install kubernetes.core
 ```
 
-## Documentation Index
+## Run
 
-1. [Ansible Overview](ansible-overview.md)
-   General overview of the Ansible layer and how it fits into the project.
+Run commands from `ansible/`:
 
-2. [Kubernetes Bootstrap](kubernetes-bootstrap.md)
-   Notes about the k3s bootstrap process and initial Kubernetes setup.
+```bash
+ansible all -m ping
+ansible-playbook playbooks/common.yaml
+ansible-playbook playbooks/k3s_controller.yaml
+ansible-playbook playbooks/k3s_worker.yaml
+ansible-playbook playbooks/metallb.yaml
+ansible-playbook playbooks/traefik.yaml
+ansible-playbook playbooks/argocd.yaml
+ansible-playbook playbooks/vault.yaml
+```
 
-3. [Vault](vault.md)
-   Notes about the Vault setup managed by Ansible.
+The local Kubernetes playbooks use the current `kubectl` context. Verify it
+before running them:
 
-4. [Vault Environment Variables](vault-env-vars.md)
-   Notes about the local environment variables used for Vault-related workflows.
+```bash
+kubectl config current-context
+```
 
-5. [Runbook](runbook.md)
-   Operational commands and workflow notes for the Ansible layer.
-
-## Scope
-
-Ansible is used as the bootstrap layer.
-
-It configures the servers, installs k3s, and prepares the initial platform components required before the Kubernetes / GitOps layer can take over ongoing management.
+`playbooks/cert_manager.yaml` is retained only as legacy bootstrap code.
+cert-manager and other GitOps resources are managed from `_kubernetes/`.

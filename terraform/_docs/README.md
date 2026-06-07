@@ -1,34 +1,41 @@
-# Terraform Docs
+# Terraform
 
-This folder contains the Terraform documentation for the `proxmox-iac-k3s-lab` project.
+Terraform provisions the Proxmox infrastructure consumed by Ansible: the k3s
+virtual machines and the Vault container.
 
-The Terraform layer is responsible for provisioning the Proxmox infrastructure used by the lab.
+## Source Of Truth
 
-## Files
+- `providers.tf` - provider configuration and Vault-backed credentials.
+- `variables.tf` - VM definitions and input values.
+- `vm.tf` - k3s virtual machines.
+- `vault_lxc.tf` - Vault container.
+- `outputs.tf` - provisioned host details.
 
-```text
-terraform-overview.md
-proxmox-resources.md
-vault-integration.md
-runbook.md
+Read the Terraform files for current addresses, sizing, versions, and resource
+configuration.
+
+## Prerequisites
+
+Terraform authenticates to Vault through the standard environment variables.
+Vault must contain the Proxmox fields referenced by `providers.tf`.
+
+```bash
+export VAULT_ADDR="https://<vault-address>"
+export VAULT_TOKEN="<token>"
+export TF_VAR_ssh_public_key="$(cat ~/.ssh/id_ed25519.pub)"
 ```
 
-## Documentation Index
+## Run
 
-1. [Terraform Overview](terraform-overview.md)
-   General overview of the Terraform layer and how it fits into the project.
+Run commands from `terraform/`:
 
-2. [Proxmox Resources](proxmox-resources.md)
-   Notes about the Proxmox resources managed by Terraform.
+```bash
+terraform init
+terraform fmt -check
+terraform validate
+terraform plan
+terraform apply
+```
 
-3. [Vault Integration](vault-integration.md)
-   Notes about how Terraform retrieves Proxmox credentials from Vault.
-
-4. [Runbook](runbook.md)
-   Operational commands and workflow notes for the Terraform layer.
-
-## Scope
-
-Terraform is used as the infrastructure provisioning layer.
-
-It manages the Proxmox resources required before the servers can be configured by Ansible and later managed through the Kubernetes / GitOps workflow.
+Review every plan before applying it. Do not commit credentials, local variable
+files, or Terraform state.
