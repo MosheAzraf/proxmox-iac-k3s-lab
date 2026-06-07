@@ -49,7 +49,10 @@ resource "proxmox_virtual_environment_container" "vault_lxc" {
 
   lifecycle {
     ignore_changes = [
-      features
+      description,
+      tags,
+      features,
+      initialization[0].user_account[0].keys
     ]
   }
 }

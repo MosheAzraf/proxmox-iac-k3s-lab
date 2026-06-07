@@ -48,4 +48,10 @@ resource "proxmox_virtual_environment_vm" "k3s_vm" {
   agent {
     enabled = true
   }
+
+  lifecycle {
+    ignore_changes = [
+      initialization[0].user_account[0].keys
+    ]
+  }
 }
