@@ -1,0 +1,18 @@
+crds:
+  enabled: true
+
+alertmanager:
+  enabled: false
+
+grafana:
+  enabled: true
+
+prometheus:
+  prometheusSpec:
+    retention: 3d
+    resources:
+      requests:
+        cpu: 100m
+        memory: 512Mi
+      limits:
+        memory: 1Gi
