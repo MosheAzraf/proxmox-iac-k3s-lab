@@ -8,5 +8,5 @@ spec:
   dnsNames:
     - grafana.home.lab
   issuerRef:
-    name: ca-issuer
+    name: internal-ca
     kind: ClusterIssuer
