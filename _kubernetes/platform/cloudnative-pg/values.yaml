@@ -8,4 +8,4 @@ resources:
     memory: 256Mi
 
 monitoring:
-  podMonitorEnabled: true
+  podMonitorEnabled: false
