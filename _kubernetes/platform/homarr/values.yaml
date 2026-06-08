@@ -1,0 +1,9 @@
+env:
+  TZ: Asia/Jerusalem
+
+persistence:
+  homarrDatabase:
+    enabled: true
+    storageClassName: "local-path"
+    accessMode: "ReadWriteOnce"
+    size: "1Gi"

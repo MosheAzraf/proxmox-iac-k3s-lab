@@ -1,0 +1,32 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: homarr
+  namespace: argocd
+spec:
+  project: default
+
+  sources:
+    - repoURL: https://homarr-labs.github.io/charts
+      chart: homarr
+      targetRevision: 8.19.0
+      helm:
+        releaseName: homarr
+        valueFiles:
+          - $values/_kubernetes/platform/homarr/values.yaml
+
+    - repoURL: https://github.com/MosheAzraf/proxmox-iac-k3s-lab
+      targetRevision: main
+      ref: values
+
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: homarr
+
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
