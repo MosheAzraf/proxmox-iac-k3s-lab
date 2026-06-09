@@ -1,0 +1,34 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: pgadmin
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+spec:
+  project: default
+
+  sources:
+    - repoURL: https://helm.runix.net
+      chart: pgadmin4
+      targetRevision: 1.64.0
+      helm:
+        releaseName: pgadmin
+        valueFiles:
+          - $values/_kubernetes/platform/pgadmin/values.yaml
+
+    - repoURL: https://github.com/MosheAzraf/proxmox-iac-k3s-lab
+      targetRevision: main
+      ref: values
+
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: pgadmin
+
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true

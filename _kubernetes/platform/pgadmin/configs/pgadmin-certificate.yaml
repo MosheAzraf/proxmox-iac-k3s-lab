@@ -1,0 +1,12 @@
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: pgadmin-certificate
+  namespace: pgadmin
+spec:
+  secretName: pgadmin-tls
+  dnsNames:
+    - pgadmin.home.lab
+  issuerRef:
+    name: internal-ca
+    kind: ClusterIssuer

@@ -1,0 +1,28 @@
+env:
+  email: admin@home.lab
+
+existingSecret: pgadmin-secret
+
+secretKeys:
+  pgadminPasswordKey: password
+
+persistentVolume:
+  enabled: true
+  storageClass: local-path
+  accessModes:
+    - ReadWriteOnce
+  size: 1Gi
+
+service:
+  type: ClusterIP
+  port: 80
+
+ingress:
+  enabled: false
+
+resources:
+  requests:
+    cpu: 50m
+    memory: 128Mi
+  limits:
+    memory: 256Mi
