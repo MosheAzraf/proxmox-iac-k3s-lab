@@ -1,0 +1,11 @@
+defaultSettings:
+  defaultReplicaCount: 1
+  backupTarget: ""
+  backupTargetCredentialSecret: ""
+
+persistence:
+  defaultClass: false
+  defaultClassReplicaCount: 1
+
+longhornUI:
+  replicas: 1
