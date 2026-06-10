@@ -46,6 +46,18 @@ kubectl create secret generic vault-token \
   --namespace external-secrets
 ```
 
+### Vault Secret Examples
+
+Example Vault paths and keys currently used by External Secrets:
+
+| Vault path                 | Key                 | Kubernetes target | Purpose                        |
+| -------------------------- | ------------------- | ----------------- | ------------------------------ |
+| `secret/data/apps/homarr`  | `db-encryption-key` | `homarr` Secret   | Homarr database encryption key |
+| `secret/data/apps/pgadmin` | `password`          | `pgadmin` Secret  | pgAdmin admin password         |
+
+Only the ExternalSecret manifests are stored in Git.
+The actual secret values are stored in Vault and are not committed to the repository.
+
 ## Operations
 
 ```bash
