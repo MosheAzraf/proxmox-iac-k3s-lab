@@ -5,10 +5,10 @@ and the services required before Argo CD takes ownership.
 
 ## Source Of Truth
 
-- `inventory.ini` - hosts and connection settings.
-- `group_vars/all.yaml` - shared versions and configuration.
-- `playbooks/` - runnable entry points.
-- `roles/` - implementation.
+* `inventory.ini` - hosts and connection settings.
+* `group_vars/all.yaml` - shared versions and configuration.
+* `playbooks/` - runnable entry points.
+* `roles/` - implementation.
 
 Read these files for current addresses, versions, and component settings.
 
@@ -42,5 +42,5 @@ before running them:
 kubectl config current-context
 ```
 
-`playbooks/cert_manager.yaml` is retained only as legacy bootstrap code.
-cert-manager and other GitOps resources are managed from `_kubernetes/`.
+`playbooks/cert_manager.yaml` and `playbooks/metallb.yaml` are retained only as legacy/bootstrap code.
+cert-manager, MetalLB, and other GitOps resources are managed from `_kubernetes/`.

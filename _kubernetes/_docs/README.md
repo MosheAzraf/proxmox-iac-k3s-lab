@@ -5,9 +5,9 @@ initial bootstrap; Argo CD manages the resources declared here afterward.
 
 ## Layout
 
-- `bootstrap/root-app.yaml` - one-time Argo CD entry point.
-- `applications/` - Argo CD `Application` resources.
-- `platform/` - Helm values and component manifests.
+* `bootstrap/root-app.yaml` - one-time Argo CD entry point.
+* `applications/` - Argo CD `Application` resources.
+* `platform/` - Helm values and component manifests.
 
 The manifests themselves are the source of truth for versions, namespaces,
 repository URLs, and configuration.
@@ -21,6 +21,16 @@ kubectl apply -f _kubernetes/bootstrap/root-app.yaml
 ```
 
 Argo CD then discovers and reconciles everything under `applications/`.
+
+## MetalLB
+
+MetalLB is managed by Argo CD from `applications/metallb/` and `platform/metallb/`.
+
+The current IP address pool is:
+
+```text
+10.0.20.200-10.0.20.230
+```
 
 ## Secrets
 
