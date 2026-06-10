@@ -1,0 +1,10 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["config:recommended"],
+  "enabledManagers": ["argocd"],
+  "argocd": {
+    "managerFilePatterns": [
+      "/_kubernetes/applications/.+/app\\.yaml$/"
+    ]
+  }
+}
