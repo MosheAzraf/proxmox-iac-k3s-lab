@@ -32,6 +32,12 @@ The current IP address pool is:
 10.0.20.200-10.0.20.230
 ```
 
+## Renovate
+
+Renovate is deployed as a self-hosted CronJob through Argo CD.
+It runs weekly and opens pull requests for Helm chart updates found in `_kubernetes/applications/**/app.yaml`.
+The GitHub token is stored in Vault and synced to Kubernetes with External Secrets.
+
 ## Secrets
 
 Secrets are not stored in Git. External Secrets reads from Vault through the
@@ -50,10 +56,11 @@ kubectl create secret generic vault-token \
 
 Example Vault paths and keys currently used by External Secrets:
 
-| Vault path                 | Key                 | Kubernetes target | Purpose                        |
-| -------------------------- | ------------------- | ----------------- | ------------------------------ |
-| `secret/data/apps/homarr`  | `db-encryption-key` | `homarr` Secret   | Homarr database encryption key |
-| `secret/data/apps/pgadmin` | `password`          | `pgadmin` Secret  | pgAdmin admin password         |
+| Vault path                  | Key                 | Kubernetes target | Purpose                        |
+| --------------------------- | ------------------- | ----------------- | ------------------------------ |
+| `secret/data/apps/homarr`   | `db-encryption-key` | `homarr` Secret   | Homarr database encryption key |
+| `secret/data/apps/pgadmin`  | `password`          | `pgadmin` Secret  | pgAdmin admin password         |
+| `secret/data/apps/renovate` | `RENOVATE_TOKEN`    | `renovate-secret` | Renovate GitHub token          |
 
 Only the ExternalSecret manifests are stored in Git.
 The actual secret values are stored in Vault and are not committed to the repository.
