@@ -1,0 +1,13 @@
+cronjob:
+  schedule: "0 9 * * 0"
+  timeZone: "Asia/Jerusalem"
+  concurrencyPolicy: "Forbid"
+
+existingSecret: renovate-secret
+
+renovate:
+  config: |
+    {
+      "platform": "github",
+      "repositories": ["MosheAzraf/proxmox-iac-k3s-lab"]
+    }

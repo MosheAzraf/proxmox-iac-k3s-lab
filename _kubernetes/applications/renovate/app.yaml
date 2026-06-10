@@ -1,0 +1,32 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: renovate
+  namespace: argocd
+spec:
+  project: default
+
+  sources:
+    - repoURL: https://docs.renovatebot.com/helm-charts
+      chart: renovate
+      targetRevision: 46.186.0
+      helm:
+        releaseName: renovate
+        valueFiles:
+          - $values/_kubernetes/platform/renovate/values.yaml
+
+    - repoURL: https://github.com/MosheAzraf/proxmox-iac-k3s-lab
+      targetRevision: main
+      ref: values
+
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: renovate
+
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
