@@ -37,7 +37,7 @@ proxmox-iac-k3s-lab/
 └── README.md
 ```
 
-## How It Works
+## Architecture
 
 ```mermaid
 flowchart TD
@@ -50,6 +50,22 @@ flowchart TD
     F --> G[GitOps Platform]
     G --> H[Ingress, TLS, Storage, Monitoring, Secrets, Databases]
 ```
+
+## Design Notes
+
+Terraform is responsible for provisioning the Proxmox infrastructure.
+
+Ansible is responsible for the initial server and cluster bootstrap.
+
+Argo CD manages the Kubernetes platform from Git after the bootstrap phase.
+
+Vault runs outside the Kubernetes cluster as a separate LXC container, so secrets are not tied to the cluster lifecycle.
+
+External Secrets Operator syncs selected Vault secrets into Kubernetes.
+
+Traefik is installed during bootstrap and provides ingress for internal services.
+
+Renovate runs inside the cluster as a CronJob and opens controlled pull requests for Helm chart updates.
 
 ## Deployment Flow
 
@@ -93,7 +109,7 @@ ansible-playbook playbooks/k3s_worker.yaml
 
 ### 3. Install bootstrap platform components
 
-Ansible is also used to install the initial platform components required before GitOps can fully manage the cluster.
+Ansible installs the initial platform components required before GitOps can fully manage the cluster.
 
 ```sh
 ansible-playbook playbooks/traefik.yaml
@@ -139,6 +155,8 @@ Homarr
 pgAdmin
 Renovate
 ```
+
+CloudNativePG is currently installed as a database operator foundation for future workloads.
 
 ## Secrets
 

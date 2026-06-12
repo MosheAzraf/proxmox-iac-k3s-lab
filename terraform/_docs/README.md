@@ -53,8 +53,9 @@ Common VM settings:
 
 | Setting          | Value       |
 | ---------------- | ----------- |
+| Proxmox node     | `pve`       |
 | Gateway          | `10.0.20.1` |
-| Bridge           | `vmbr0`     |
+| Network bridge   | `vmbr0`     |
 | Template ID      | `9000`      |
 | User             | `ubuntu`    |
 | QEMU guest agent | Enabled     |
@@ -72,6 +73,7 @@ Common LXC settings:
 
 | Setting                | Value        |
 | ---------------------- | ------------ |
+| Proxmox node           | `pve`        |
 | Gateway                | `10.0.20.1`  |
 | OS                     | Ubuntu 24.04 |
 | Unprivileged container | Enabled      |
