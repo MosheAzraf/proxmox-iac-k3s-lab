@@ -98,26 +98,7 @@ Expected Vault path for Proxmox credentials:
 | `secret/data/proxmox` | `username` | Proxmox API username |
 | `secret/data/proxmox` | `password` | Proxmox API password |
 
-## Kubernetes Secret Requirements
-
-Vault also stores application secrets used later by External Secrets Operator.
-
-External Secrets reads from Vault through the `ClusterSecretStore` managed in the GitOps layer:
-
-```text
-_kubernetes/platform/external-secrets/cluster-secret-store.yaml
-```
-
-Current Vault paths and keys used by Kubernetes applications:
-
-| Vault path                  | Key                 | Kubernetes target | Purpose                        |
-| --------------------------- | ------------------- | ----------------- | ------------------------------ |
-| `secret/data/apps/homarr`   | `db-encryption-key` | `db-encryption`   | Homarr database encryption key |
-| `secret/data/apps/pgadmin`  | `password`          | `pgadmin-secret`  | pgAdmin admin password         |
-| `secret/data/apps/renovate` | `RENOVATE_TOKEN`    | `renovate-secret` | Renovate GitHub token          |
-
-Only the ExternalSecret manifests are stored in Git.
-The actual secret values are stored in Vault and are not committed to the repository.
+Kubernetes application secrets are documented in the [Kubernetes / GitOps Layer](../../_kubernetes/_docs/README.md).
 
 ## Run
 

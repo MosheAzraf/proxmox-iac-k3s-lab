@@ -179,7 +179,7 @@ kubectl create secret generic vault-token \
   --namespace external-secrets
 ```
 
-Detailed Vault paths and required keys are documented in the [Terraform Layer](terraform/_docs/README.md).
+Detailed Vault paths and required Kubernetes secret keys are documented in the [Kubernetes / GitOps Layer](./_kubernetes/_docs/README.md).
 
 ## Renovate
 
