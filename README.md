@@ -34,6 +34,7 @@ proxmox-iac-k3s-lab/
 ├── ansible/          # Server and cluster bootstrap
 ├── _kubernetes/      # GitOps layer managed by Argo CD
 ├── renovate.json     # Renovate configuration
+├── LICENSE
 └── README.md
 ```
 
@@ -222,3 +223,7 @@ This is a personal lab project.
 Pull requests from external contributors are not expected to be reviewed or merged.
 
 The repository is public for learning, documentation, and portfolio purposes.
+
+## License
+
+This project is licensed under the MIT License. See [LICENSE](LICENSE).
