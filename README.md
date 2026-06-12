@@ -140,9 +140,41 @@ pgAdmin
 Renovate
 ```
 
-Secrets are stored in Vault and synced into Kubernetes with External Secrets Operator.
+## Secrets
 
-Renovate runs inside the cluster as a CronJob and opens pull requests for Helm chart updates.
+Secrets are not stored in Git.
+
+Vault stores secret values, and External Secrets Operator syncs them into Kubernetes as native Kubernetes Secrets.
+
+External Secrets uses the `ClusterSecretStore` defined under:
+
+```text
+_kubernetes/platform/external-secrets/cluster-secret-store.yaml
+```
+
+The Vault token used by External Secrets must be created manually in the `external-secrets` namespace:
+
+```sh
+kubectl create secret generic vault-token \
+  --from-literal=token="$VAULT_TOKEN" \
+  --namespace external-secrets
+```
+
+Detailed Vault paths and required keys are documented in the [Terraform Layer](terraform/_docs/README.md).
+
+## Renovate
+
+Renovate runs inside the cluster as a CronJob managed by Argo CD.
+
+It checks Helm chart versions from the Argo CD Application manifests and opens pull requests for updates.
+
+The repository-level Renovate configuration is stored in:
+
+```text
+renovate.json
+```
+
+The configuration is intentionally conservative so dependency updates can be reviewed and applied gradually.
 
 ## Documentation
 

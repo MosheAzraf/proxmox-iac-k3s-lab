@@ -1,4 +1,6 @@
-# Terraform
+# Terraform Layer
+
+Project-specific notes for the Terraform infrastructure layer of `proxmox-iac-k3s-lab`.
 
 Terraform provisions the Proxmox infrastructure consumed by the rest of the project.
 
@@ -34,19 +36,86 @@ variables.tf
 vault_lxc.tf
 ```
 
-Read the Terraform files for current addresses, sizing, versions, and resource configuration.
+Read the Terraform files for the current resource configuration.
 
-## Prerequisites
+## Terraform Roots
+
+### k3s Virtual Machines
+
+Current VM layout:
+
+| Name                | VM ID | IP address       | CPU       | Memory     | Disk     | Purpose        |
+| ------------------- | ----- | ---------------- | --------- | ---------- | -------- | -------------- |
+| `k3s-controller-01` | `201` | `10.0.20.101/24` | `4` cores | `8192 MB`  | `150 GB` | k3s controller |
+| `k3s-worker-01`     | `202` | `10.0.20.102/24` | `4` cores | `16384 MB` | `150 GB` | k3s worker     |
+
+Common VM settings:
+
+| Setting          | Value       |
+| ---------------- | ----------- |
+| Gateway          | `10.0.20.1` |
+| Bridge           | `vmbr0`     |
+| Template ID      | `9000`      |
+| User             | `ubuntu`    |
+| QEMU guest agent | Enabled     |
+| Start on boot    | Enabled     |
+
+### Vault LXC
+
+Current Vault LXC layout:
+
+| Name    | VM ID | IP address       | CPU       | Memory    | Disk    | Purpose      |
+| ------- | ----- | ---------------- | --------- | --------- | ------- | ------------ |
+| `vault` | `210` | `10.0.20.110/24` | `2` cores | `2048 MB` | `20 GB` | Vault server |
+
+Common LXC settings:
+
+| Setting                | Value        |
+| ---------------------- | ------------ |
+| Gateway                | `10.0.20.1`  |
+| OS                     | Ubuntu 24.04 |
+| Unprivileged container | Enabled      |
+
+## Vault Requirements
 
 Terraform authenticates to Vault through the standard environment variables.
 
-Vault must contain the Proxmox fields referenced by `providers.tf`.
+Vault must contain the Proxmox credentials referenced by `providers.tf`.
 
 ```bash
-export VAULT_ADDR="https://<vault-address>"
+export VAULT_ADDR="http://10.0.20.110:8200"
 export VAULT_TOKEN="<token>"
 export TF_VAR_ssh_public_key="$(cat ~/.ssh/id_ed25519.pub)"
 ```
+
+Expected Vault path for Proxmox credentials:
+
+| Vault path            | Key        | Purpose              |
+| --------------------- | ---------- | -------------------- |
+| `secret/data/proxmox` | `endpoint` | Proxmox API endpoint |
+| `secret/data/proxmox` | `username` | Proxmox API username |
+| `secret/data/proxmox` | `password` | Proxmox API password |
+
+## Kubernetes Secret Requirements
+
+Vault also stores application secrets used later by External Secrets Operator.
+
+External Secrets reads from Vault through the `ClusterSecretStore` managed in the GitOps layer:
+
+```text
+_kubernetes/platform/external-secrets/cluster-secret-store.yaml
+```
+
+Current Vault paths and keys used by Kubernetes applications:
+
+| Vault path                  | Key                 | Kubernetes target | Purpose                        |
+| --------------------------- | ------------------- | ----------------- | ------------------------------ |
+| `secret/data/apps/homarr`   | `db-encryption-key` | `db-encryption`   | Homarr database encryption key |
+| `secret/data/apps/pgadmin`  | `password`          | `pgadmin-secret`  | pgAdmin admin password         |
+| `secret/data/apps/renovate` | `RENOVATE_TOKEN`    | `renovate-secret` | Renovate GitHub token          |
+
+Only the ExternalSecret manifests are stored in Git.
+The actual secret values are stored in Vault and are not committed to the repository.
 
 ## Run
 
