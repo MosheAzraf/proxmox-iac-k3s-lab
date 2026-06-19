@@ -126,7 +126,7 @@ Example:
 ```bash
 vault kv put secret/proxmox/proxmox \
   proxmox_api_url="https://<proxmox-host>:8006/api2/json" \
-  proxmox_token_id="terraform@pam!<token-name>" \
+  proxmox_token_id="terraform@pam!terraform" \
   proxmox_token_secret="<token-secret>"
 ```
 
@@ -161,20 +161,50 @@ Current Proxmox permission model:
 | Path      | `/`             |
 | Propagate | Enabled         |
 
-The custom `TerraformProv` role is assigned at the Datacenter root level with propagation enabled.
+Create the custom Terraform role:
 
-This allows Terraform to create, clone, configure, power-manage, migrate, and audit the required Proxmox virtual machines and containers for the lab.
+```bash
+pveum role add TerraformProv -privs "Datastore.AllocateSpace Datastore.Audit Pool.Allocate SDN.Use Sys.Audit Sys.Console Sys.Modify VM.Allocate VM.Audit VM.Clone VM.Config.CDROM VM.Config.CPU VM.Config.Cloudinit VM.Config.Disk VM.Config.HWType VM.Config.Memory VM.Config.Network VM.Config.Options VM.GuestAgent.Audit VM.GuestAgent.Unrestricted VM.Migrate VM.PowerMgmt"
+```
 
-The role includes permissions for:
+Create the dedicated Terraform user:
+
+```bash
+pveum user add terraform@pam
+```
+
+Assign the role at the Datacenter root path with propagation enabled:
+
+```bash
+pveum aclmod / -user terraform@pam -role TerraformProv
+```
+
+Create an API token for the Terraform user:
+
+```bash
+pveum user token add terraform@pam terraform
+```
+
+The token ID will be:
 
 ```text
-Datastore allocation and audit
-Pool allocation
-SDN usage
-System audit, console, and modification
-VM allocation, cloning, configuration, migration, power management, and audit
-VM guest agent access
+terraform@pam!terraform
 ```
+
+Copy the generated token secret when it is created.
+
+The token secret is shown only once.
+
+Store the Proxmox API token in the local development Vault:
+
+```bash
+vault kv put secret/proxmox/proxmox \
+  proxmox_api_url="https://<proxmox-host>:8006/api2/json" \
+  proxmox_token_id="terraform@pam!terraform" \
+  proxmox_token_secret="<token-secret>"
+```
+
+The custom `TerraformProv` role allows Terraform to create, clone, configure, power-manage, migrate, and audit the required Proxmox resources for this lab.
 
 The exact role permissions are managed in Proxmox and are not stored in this repository.
 
