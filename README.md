@@ -64,7 +64,7 @@ Argo CD manages the Kubernetes platform from Git after the bootstrap phase.
 
 A separate Vault instance runs outside the Kubernetes cluster as a Proxmox LXC container, so Kubernetes application secrets are not tied to the cluster lifecycle.
 
-External Secrets Operator syncs selected Vault secrets into Kubernetes.
+External Secrets Operator syncs selected Vault secrets from the Vault LXC into Kubernetes.
 
 Traefik is installed during bootstrap and provides ingress for internal services.
 
@@ -72,7 +72,7 @@ Renovate runs inside the cluster as a CronJob and opens controlled pull requests
 
 ## Deployment Flow
 
-### 1. Prepare Proxmox API access
+### 1. Prepare Proxmox API Access
 
 Terraform requires a Proxmox API token before infrastructure can be created.
 
@@ -102,7 +102,7 @@ The user has the custom `TerraformProv` role assigned at the Datacenter root pat
 
 Detailed setup notes are documented in the [Terraform Layer](terraform/_docs/README.md).
 
-### 2. Provision infrastructure
+### 2. Provision Infrastructure
 
 Terraform is split into separate states:
 
@@ -129,7 +129,7 @@ terraform plan
 terraform apply
 ```
 
-### 3. Bootstrap the cluster
+### 3. Bootstrap The Cluster
 
 Ansible is used to configure the servers and install k3s.
 
@@ -140,7 +140,7 @@ ansible-playbook playbooks/k3s_controller.yaml
 ansible-playbook playbooks/k3s_worker.yaml
 ```
 
-### 4. Install bootstrap platform components
+### 4. Install Bootstrap Platform Components
 
 Ansible installs the initial platform components required before GitOps can fully manage the cluster.
 
@@ -159,7 +159,7 @@ ansible-playbook playbooks/metallb.yaml
 
 After Argo CD takes over, ongoing Kubernetes platform changes should be made through the `_kubernetes` directory.
 
-### 5. Enable GitOps management
+### 5. Enable GitOps Management
 
 After Argo CD is installed, apply the root application:
 
@@ -201,6 +201,10 @@ This project uses two Vault instances:
 | ----------------------- | ----------------------------------------------------------------------- |
 | Local development Vault | Stores the Proxmox API token used by Terraform                          |
 | Vault LXC               | Stores Kubernetes application secrets used by External Secrets Operator |
+
+Terraform uses the local development Vault only for reading Proxmox API credentials.
+
+Kubernetes uses the Vault LXC together with External Secrets Operator.
 
 External Secrets uses the `ClusterSecretStore` defined under:
 

@@ -78,11 +78,21 @@ Common LXC settings:
 | OS                     | Ubuntu 24.04 |
 | Unprivileged container | Enabled      |
 
-## Vault Requirements
+## Prerequisites
 
-Terraform does not store Proxmox credentials directly in Git.
+Before running Terraform, the following must be available:
 
-Before running Terraform, a local development Vault instance must be available on the development machine.
+```text
+Proxmox API user and token
+Local development Vault instance
+SSH public key for the provisioned machines
+```
+
+Terraform reads the Proxmox API token from a local development Vault instance.
+
+The Proxmox token is not stored in Git.
+
+## Vault Instances
 
 This project uses two separate Vault instances:
 
@@ -91,64 +101,11 @@ This project uses two separate Vault instances:
 | Local development Vault | Development machine   | Stores the Proxmox API token used by Terraform                          |
 | Kubernetes Vault LXC    | Proxmox LXC container | Stores Kubernetes application secrets used by External Secrets Operator |
 
-The local development Vault is used only for provisioning infrastructure with Terraform.
+The local development Vault must exist before running Terraform.
 
-The Vault LXC is created by Terraform and later configured by Ansible for Kubernetes-related secrets.
+The Kubernetes Vault LXC is created by Terraform and later configured by Ansible.
 
-### Local Development Vault
-
-Terraform authenticates to Vault through the standard Vault environment variables.
-
-Example:
-
-```bash
-export VAULT_ADDR="http://127.0.0.1:8200"
-export VAULT_TOKEN="<local-vault-token>"
-export TF_VAR_ssh_public_key="$(cat ~/.ssh/id_ed25519.pub)"
-```
-
-The Proxmox API token must be stored in the local Vault under:
-
-```text
-secret/proxmox/proxmox
-```
-
-Expected keys:
-
-| Key                    | Purpose                  |
-| ---------------------- | ------------------------ |
-| `proxmox_api_url`      | Proxmox API URL          |
-| `proxmox_token_id`     | Proxmox API token ID     |
-| `proxmox_token_secret` | Proxmox API token secret |
-
-Example:
-
-```bash
-vault kv put secret/proxmox/proxmox \
-  proxmox_api_url="https://<proxmox-host>:8006/api2/json" \
-  proxmox_token_id="terraform@pam!terraform" \
-  proxmox_token_secret="<token-secret>"
-```
-
-In the Vault UI, this secret is stored under:
-
-```text
-Vault
-Secrets engines
-secret
-proxmox
-proxmox
-```
-
-The secret should contain:
-
-```text
-proxmox_api_url
-proxmox_token_id
-proxmox_token_secret
-```
-
-### Proxmox API Token
+## Proxmox API Setup
 
 Terraform uses a dedicated Proxmox API user and token.
 
@@ -160,6 +117,8 @@ Current Proxmox permission model:
 | Role      | `TerraformProv` |
 | Path      | `/`             |
 | Propagate | Enabled         |
+
+Run the following commands on the Proxmox host.
 
 Create the custom Terraform role:
 
@@ -195,7 +154,35 @@ Copy the generated token secret when it is created.
 
 The token secret is shown only once.
 
-Store the Proxmox API token in the local development Vault:
+The custom `TerraformProv` role allows Terraform to create, clone, configure, power-manage, migrate, and audit the required Proxmox resources for this lab.
+
+## Local Vault Secret
+
+Terraform authenticates to Vault through the standard Vault environment variables.
+
+Example:
+
+```bash
+export VAULT_ADDR="http://127.0.0.1:8200"
+export VAULT_TOKEN="<local-vault-token>"
+export TF_VAR_ssh_public_key="$(cat ~/.ssh/id_ed25519.pub)"
+```
+
+The Proxmox API token must be stored in the local development Vault under:
+
+```text
+secret/proxmox/proxmox
+```
+
+Expected keys:
+
+| Key                    | Purpose                  |
+| ---------------------- | ------------------------ |
+| `proxmox_api_url`      | Proxmox API URL          |
+| `proxmox_token_id`     | Proxmox API token ID     |
+| `proxmox_token_secret` | Proxmox API token secret |
+
+Store the token in Vault:
 
 ```bash
 vault kv put secret/proxmox/proxmox \
@@ -204,9 +191,23 @@ vault kv put secret/proxmox/proxmox \
   proxmox_token_secret="<token-secret>"
 ```
 
-The custom `TerraformProv` role allows Terraform to create, clone, configure, power-manage, migrate, and audit the required Proxmox resources for this lab.
+In the Vault UI, this secret is stored under:
 
-The exact role permissions are managed in Proxmox and are not stored in this repository.
+```text
+Vault
+Secrets engines
+secret
+proxmox
+proxmox
+```
+
+The secret should contain:
+
+```text
+proxmox_api_url
+proxmox_token_id
+proxmox_token_secret
+```
 
 Kubernetes application secrets are documented in the [Kubernetes / GitOps Layer](../../_kubernetes/_docs/README.md).
 

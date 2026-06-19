@@ -2,8 +2,7 @@
 
 Project-specific notes for the Kubernetes and GitOps layer of `proxmox-iac-k3s-lab`.
 
-This directory is the GitOps source for the cluster. Ansible performs the
-initial bootstrap; Argo CD manages the resources declared here afterward.
+This directory is the GitOps source for the cluster. Ansible performs the initial bootstrap; Argo CD manages the resources declared here afterward.
 
 ## Layout
 
@@ -11,8 +10,7 @@ initial bootstrap; Argo CD manages the resources declared here afterward.
 * `applications/` - Argo CD `Application` resources.
 * `platform/` - Helm values and component manifests.
 
-The manifests themselves are the source of truth for versions, namespaces,
-repository URLs, and configuration.
+The manifests themselves are the source of truth for versions, namespaces, repository URLs, and configuration.
 
 ## Bootstrap
 
@@ -50,15 +48,15 @@ The GitHub token is stored in Vault and synced to Kubernetes with External Secre
 
 Secrets are not stored in Git.
 
-External Secrets reads from Vault through the `ClusterSecretStore` defined in:
+This Kubernetes layer uses the Vault LXC created for the cluster environment.
+
+This is separate from the local development Vault used by Terraform to read the Proxmox API token.
+
+External Secrets reads from the Vault LXC through the `ClusterSecretStore` defined in:
 
 ```text
 _kubernetes/platform/external-secrets/cluster-secret-store.yaml
 ```
-
-The Vault used by External Secrets is the Vault LXC created for the Kubernetes environment.
-
-This is separate from the local development Vault used by Terraform to read the Proxmox API token.
 
 Create the Vault authentication secret manually in the namespace referenced by that manifest:
 
@@ -92,6 +90,6 @@ kubectl get pods -A
 kubectl describe application <name> -n argocd
 ```
 
-Make ongoing platform changes in `applications/` or `platform/` and let Argo CD
-reconcile them. Do not manage GitOps-owned components with their old Ansible
-playbooks.
+Make ongoing platform changes in `applications/` or `platform/` and let Argo CD reconcile them.
+
+Do not manage GitOps-owned components with their old Ansible playbooks.
