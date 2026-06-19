@@ -56,6 +56,10 @@ External Secrets reads from Vault through the `ClusterSecretStore` defined in:
 _kubernetes/platform/external-secrets/cluster-secret-store.yaml
 ```
 
+The Vault used by External Secrets is the Vault LXC created for the Kubernetes environment.
+
+This is separate from the local development Vault used by Terraform to read the Proxmox API token.
+
 Create the Vault authentication secret manually in the namespace referenced by that manifest:
 
 ```bash
@@ -77,6 +81,8 @@ Example Vault paths and keys currently used by External Secrets:
 Only the ExternalSecret manifests are stored in Git.
 
 The actual secret values are stored in Vault and are not committed to the repository.
+
+Terraform and Proxmox API credentials are documented in the [Terraform Layer](../../terraform/_docs/README.md).
 
 ## Operations
 

@@ -56,11 +56,13 @@ flowchart TD
 
 Terraform is responsible for provisioning the Proxmox infrastructure.
 
+Terraform reads the Proxmox API token from a local development Vault instance.
+
 Ansible is responsible for the initial server and cluster bootstrap.
 
 Argo CD manages the Kubernetes platform from Git after the bootstrap phase.
 
-Vault runs outside the Kubernetes cluster as a separate LXC container, so secrets are not tied to the cluster lifecycle.
+A separate Vault instance runs outside the Kubernetes cluster as a Proxmox LXC container, so Kubernetes application secrets are not tied to the cluster lifecycle.
 
 External Secrets Operator syncs selected Vault secrets into Kubernetes.
 
@@ -70,7 +72,37 @@ Renovate runs inside the cluster as a CronJob and opens controlled pull requests
 
 ## Deployment Flow
 
-### 1. Provision infrastructure
+### 1. Prepare Proxmox API access
+
+Terraform requires a Proxmox API token before infrastructure can be created.
+
+The Proxmox token is stored in a local development Vault instance and is read by Terraform during `plan` and `apply`.
+
+The expected local Vault path is:
+
+```text
+secret/proxmox/proxmox
+```
+
+Expected keys:
+
+```text
+proxmox_api_url
+proxmox_token_id
+proxmox_token_secret
+```
+
+The Proxmox API user used by this lab is:
+
+```text
+terraform@pam
+```
+
+The user has the custom `TerraformProv` role assigned at the Datacenter root path `/` with propagation enabled.
+
+Detailed setup notes are documented in the [Terraform Layer](terraform/_docs/README.md).
+
+### 2. Provision infrastructure
 
 Terraform is split into separate states:
 
@@ -97,7 +129,7 @@ terraform plan
 terraform apply
 ```
 
-### 2. Bootstrap the cluster
+### 3. Bootstrap the cluster
 
 Ansible is used to configure the servers and install k3s.
 
@@ -108,7 +140,7 @@ ansible-playbook playbooks/k3s_controller.yaml
 ansible-playbook playbooks/k3s_worker.yaml
 ```
 
-### 3. Install bootstrap platform components
+### 4. Install bootstrap platform components
 
 Ansible installs the initial platform components required before GitOps can fully manage the cluster.
 
@@ -127,7 +159,7 @@ ansible-playbook playbooks/metallb.yaml
 
 After Argo CD takes over, ongoing Kubernetes platform changes should be made through the `_kubernetes` directory.
 
-### 4. Enable GitOps management
+### 5. Enable GitOps management
 
 After Argo CD is installed, apply the root application:
 
@@ -163,7 +195,12 @@ CloudNativePG is currently installed as a database operator foundation for futur
 
 Secrets are not stored in Git.
 
-Vault stores secret values, and External Secrets Operator syncs them into Kubernetes as native Kubernetes Secrets.
+This project uses two Vault instances:
+
+| Vault instance          | Purpose                                                                 |
+| ----------------------- | ----------------------------------------------------------------------- |
+| Local development Vault | Stores the Proxmox API token used by Terraform                          |
+| Vault LXC               | Stores Kubernetes application secrets used by External Secrets Operator |
 
 External Secrets uses the `ClusterSecretStore` defined under:
 
@@ -180,6 +217,8 @@ kubectl create secret generic vault-token \
 ```
 
 Detailed Vault paths and required Kubernetes secret keys are documented in the [Kubernetes / GitOps Layer](./_kubernetes/_docs/README.md).
+
+Terraform-related Vault usage is documented in the [Terraform Layer](terraform/_docs/README.md).
 
 ## Renovate
 
