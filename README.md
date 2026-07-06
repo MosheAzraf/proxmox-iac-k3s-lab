@@ -24,6 +24,7 @@ CloudNativePG
 kube-prometheus-stack
 Grafana
 Renovate
+Reloader
 ```
 
 ## Repository Layout
@@ -187,6 +188,7 @@ Grafana
 Homarr
 pgAdmin
 Renovate
+Reloader
 ```
 
 CloudNativePG is currently installed as a database operator foundation for future workloads.
