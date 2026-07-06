@@ -1,0 +1,3 @@
+reloader:
+  ignoreJobs: true
+  ignoreCronJobs: true
