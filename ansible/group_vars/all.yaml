@@ -2,6 +2,9 @@
 # k3s vars
 k3s_version: "v1.35.4+k3s1"
 
+#update k3s
+update_k3s_version: "v1.35.8+k3s1"
+
 # metallb
 metallb_namespace: "metallb-system"
 metallb_release_name: "metallb"

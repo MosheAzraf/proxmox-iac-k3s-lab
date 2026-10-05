@@ -1,0 +1,12 @@
+---
+- name: update k3s controller
+  hosts: controllers
+  become: true
+  roles:
+    - update_k3s
+
+- name: update k3s workers
+  hosts: workers
+  become: true
+  roles:
+    - update_k3s

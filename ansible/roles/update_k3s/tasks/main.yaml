@@ -1,0 +1,19 @@
+---
+- name: update k3s controller
+  ansible.builtin.shell: |
+    curl -sfL https://get.k3s.io | INSTALL_K3S_VERSION="{{ update_k3s_version }}" INSTALL_K3S_EXEC="server --disable traefik --disable servicelb" sh -
+  when: inventory_hostname in groups['controllers']
+
+- name: get k3s node token from controller
+  ansible.builtin.command: cat /var/lib/rancher/k3s/server/node-token
+  register: k3s_node_token
+  changed_when: false
+  no_log: true
+  delegate_to: "{{ groups['controllers'][0] }}"
+  when: inventory_hostname in groups['workers']
+
+- name: update k3s worker
+  ansible.builtin.shell: |
+    curl -sfL https://get.k3s.io | INSTALL_K3S_VERSION="{{ update_k3s_version }}" K3S_URL="https://{{ hostvars[groups['controllers'][0]].ansible_host }}:6443" K3S_TOKEN="{{ k3s_node_token.stdout }}" sh -
+  no_log: true
+  when: inventory_hostname in groups['workers']
