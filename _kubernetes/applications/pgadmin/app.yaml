@@ -11,7 +11,7 @@ spec:
   sources:
     - repoURL: https://helm.runix.net
       chart: pgadmin4
-      targetRevision: 1.64.0
+      targetRevision: 1.70.4
       helm:
         releaseName: pgadmin
         valueFiles:
