@@ -148,7 +148,7 @@ Ansible installs the initial platform components required before GitOps can full
 ```sh
 ansible-playbook playbooks/traefik.yaml
 ansible-playbook playbooks/argocd.yaml
-ansible-playbook playbooks/vault.yaml
+ansible-playbook playbooks/vault.yaml --skip-tags vault-kubernetes-auth
 ```
 
 Additional bootstrap playbooks are available for rebuild scenarios:
@@ -165,10 +165,39 @@ After Argo CD takes over, ongoing Kubernetes platform changes should be made thr
 After Argo CD is installed, apply the root application:
 
 ```sh
+cd ..
 kubectl apply -f _kubernetes/bootstrap/root-app.yaml
 ```
 
 From this point, Argo CD tracks and reconciles the Kubernetes platform configuration from Git.
+
+### 6. Configure Vault Authentication for External Secrets
+
+The first-time Vault setup is **not fully automated**. Once the Vault LXC has been installed, an operator must initialize and unseal Vault, store its initialization credentials safely, enable the `secret` KV v2 engine, and create the application secrets and the `eso-read` policy. This lab uses a local, disk-based unseal-key helper, which is not a production-grade auto-unseal solution.
+
+The `eso-read` policy grants read access to `secret/data/apps/*` and list/read access to `secret/metadata/apps/*`. Keep actual secrets, administrator tokens and unseal keys outside Git.
+
+Before running Vault Kubernetes authentication configuration, wait until Argo CD has deployed the `vault-auth` ServiceAccount and its TokenReview ClusterRoleBinding from `_kubernetes/platform/external-secrets/vault-auth.yaml`.
+
+From the `ansible/` directory on the control machine, enter the **Vault LXC administrator token** when prompted (input is hidden):
+
+```sh
+read -s VAULT_TOKEN && export VAULT_TOKEN
+ansible-playbook playbooks/vault.yaml --tags vault-kubernetes-auth
+unset VAULT_TOKEN
+```
+
+Ansible enables and configures the Vault Kubernetes auth backend and binds the `vault-auth` ServiceAccount to the `eso-read` policy. External Secrets then requests short-lived Vault tokens through Kubernetes authentication as needed; no static Vault token needs to be created or renewed manually in Kubernetes.
+
+Check the result:
+
+```sh
+kubectl get clustersecretstore vault-k3s
+kubectl get externalsecrets -A
+kubectl get applications -n argocd
+```
+
+Expected results include `Valid` / `Ready=True` for `vault-k3s` and `SecretSynced` / `Ready=True` for the ExternalSecrets. See the [Ansible Layer](ansible/_docs/README.md) for the full prerequisites and setup.
 
 ## GitOps Platform
 
@@ -214,13 +243,9 @@ External Secrets uses the `ClusterSecretStore` defined under:
 _kubernetes/platform/external-secrets/cluster-secret-store.yaml
 ```
 
-The Vault token used by External Secrets must be created manually in the `external-secrets` namespace:
+External Secrets uses Vault Kubernetes authentication rather than a manually provisioned `vault-token` Secret. Argo CD deploys the `vault-auth` ServiceAccount and the `ClusterSecretStore`; Ansible configures the corresponding authentication backend and `eso-read` policy binding in the Vault LXC.
 
-```sh
-kubectl create secret generic vault-token \
-  --from-literal=token="$VAULT_TOKEN" \
-  --namespace external-secrets
-```
+Vault initialization and initial secret provisioning are still manual bootstrap steps. Routine External Secrets authentication and token renewal no longer require manual intervention.
 
 Detailed Vault paths and required Kubernetes secret keys are documented in the [Kubernetes / GitOps Layer](./_kubernetes/_docs/README.md).
 

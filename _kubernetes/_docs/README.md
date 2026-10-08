@@ -58,13 +58,15 @@ External Secrets reads from the Vault LXC through the `ClusterSecretStore` defin
 _kubernetes/platform/external-secrets/cluster-secret-store.yaml
 ```
 
-Create the Vault authentication secret manually in the namespace referenced by that manifest:
+External Secrets authenticates with **Vault Kubernetes Authentication**, not a manually created Vault token Secret.
 
-```bash
-kubectl create secret generic vault-token \
-  --from-literal=token="$VAULT_TOKEN" \
-  --namespace external-secrets
-```
+- `platform/external-secrets/vault-auth.yaml` defines the `vault-auth` ServiceAccount in `external-secrets` and its TokenReview ClusterRoleBinding.
+- `platform/external-secrets/cluster-secret-store.yaml` uses `auth.kubernetes` with the `external-secrets` Vault role, ServiceAccount reference and configured audience.
+- Ansible sets up the matching Vault Kubernetes auth backend and role with `eso-read` read permissions.
+
+**Bootstrap order:** initialize and unseal the Vault LXC, provision the `secret` KV v2 engine, `eso-read` policy and required application secrets; bootstrap Argo CD so it creates the ServiceAccount; then run the tagged Vault Kubernetes auth tasks using Ansible (see [Ansible documentation](../../ansible/_docs/README.md)).
+
+External Secrets requests short-lived Vault credentials automatically as required. No permanent `vault-token` Secret or periodic manual renewal is needed. Initial Vault setup and administrator credentials still require operator action.
 
 ### Vault Secret Examples
 
@@ -88,6 +90,20 @@ Terraform and Proxmox API credentials are documented in the [Terraform Layer](..
 kubectl get applications -n argocd
 kubectl get pods -A
 kubectl describe application <name> -n argocd
+kubectl get clustersecretstore vault-k3s
+kubectl get externalsecrets -A
+```
+
+When secret syncing fails, check the `vault-k3s` store first, then inspect the affected ExternalSecret:
+
+```bash
+kubectl describe externalsecret <name> -n <namespace>
+```
+
+If the store has recovered but an ExternalSecret is still showing a stale error, request a one-time reconciliation:
+
+```bash
+kubectl annotate externalsecret <name> -n <namespace> force-sync="$(date +%s)" --overwrite
 ```
 
 Make ongoing platform changes in `applications/` or `platform/` and let Argo CD reconcile them.
