@@ -9,7 +9,7 @@ spec:
   sources:
     - repoURL: https://homarr-labs.github.io/charts
       chart: homarr
-      targetRevision: 8.19.0
+      targetRevision: 8.32.0
       helm:
         releaseName: homarr
         valueFiles:
