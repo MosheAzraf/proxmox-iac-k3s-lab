@@ -1,0 +1,56 @@
+---
+- name: Check Kubernetes auth status
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:8200/v1/sys/auth"
+    method: GET
+    headers:
+      X-Vault-Token: "{{ vault_admin_token }}"
+    return_content: true
+  register: vault_auth_methods
+  no_log: true
+
+- name: Enable Kubernetes authentication
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:8200/v1/sys/auth/kubernetes"
+    method: POST
+    headers:
+      X-Vault-Token: "{{ vault_admin_token }}"
+    body_format: json
+    body:
+      type: kubernetes
+    status_code: 204
+  when: "'kubernetes/' not in vault_auth_methods.json"
+  no_log: true
+
+- name: Configure Vault Kubernetes authentication
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:8200/v1/auth/kubernetes/config"
+    method: POST
+    headers:
+      X-Vault-Token: "{{ vault_admin_token }}"
+    body_format: json
+    body:
+      kubernetes_host: "{{ vault_k8s_api }}"
+      kubernetes_ca_cert: "{{ (lookup('ansible.builtin.pipe', 'kubectl get configmap kube-root-ca.crt -n external-secrets -o json') | from_json)['data']['ca.crt'] }}"
+      disable_local_ca_jwt: true
+    status_code: 204
+  no_log: true
+
+- name: Configure External Secrets Vault role
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:8200/v1/auth/kubernetes/role/{{ vault_k8s_auth_role }}"
+    method: POST
+    headers:
+      X-Vault-Token: "{{ vault_admin_token }}"
+    body_format: json
+    body:
+      bound_service_account_names:
+        - "{{ vault_k8s_service_account }}"
+      bound_service_account_namespaces:
+        - "{{ vault_k8s_namespace }}"
+      token_policies:
+        - "{{ vault_k8s_policy }}"
+      audience: "{{ vault_k8s_audience }}"
+      token_ttl: 1h
+    status_code: 204
+  no_log: true

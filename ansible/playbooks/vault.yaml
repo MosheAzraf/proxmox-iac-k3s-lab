@@ -1,5 +1,7 @@
 ---
-- name: install vault
+- name: Install and configure Vault
   hosts: vault
+  vars:
+    vault_admin_token: "{{ lookup('ansible.builtin.env', 'VAULT_TOKEN') }}"
   roles:
     - vault

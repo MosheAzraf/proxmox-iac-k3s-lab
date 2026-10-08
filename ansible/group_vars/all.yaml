@@ -45,3 +45,11 @@ cert_manager_crds_enabled: true
 
 #vault lxc
 vault_version: "1.21.2-1"
+
+# Vault Kubernetes Authentication
+vault_k8s_api: "https://10.0.20.101:6443"
+vault_k8s_auth_role: "external-secrets"
+vault_k8s_service_account: "vault-auth"
+vault_k8s_namespace: "external-secrets"
+vault_k8s_policy: "eso-read"
+vault_k8s_audience: "https://kubernetes.default.svc.cluster.local"

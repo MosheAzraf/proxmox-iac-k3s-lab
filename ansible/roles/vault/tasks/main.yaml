@@ -87,3 +87,8 @@
     name: vault-unseal
     state: started
   when: vault_unseal_key is defined
+
+- name: Configure Vault Kubernetes authentication
+  ansible.builtin.import_tasks: kubernetes-auth.yaml
+  tags:
+    - vault-kubernetes-auth
