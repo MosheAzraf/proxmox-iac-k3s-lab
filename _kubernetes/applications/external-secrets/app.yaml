@@ -9,7 +9,7 @@ spec:
   source:
     repoURL: https://charts.external-secrets.io
     chart: external-secrets
-    targetRevision: 2.5.0
+    targetRevision: 2.12.0
 
     # No local values.yaml is used here because this Application installs
     # the Helm chart directly from the external-secrets Helm repository.
