@@ -1,8 +1,8 @@
 ---
 # k3s vars
-k3s_version: "v1.35.4+k3s1"
+k3s_version: "v1.35.8+k3s1"
 
-#update k3s
+# update k3s
 update_k3s_version: "v1.35.8+k3s1"
 
 # metallb
@@ -11,7 +11,7 @@ metallb_release_name: "metallb"
 metallb_chart: "metallb/metallb"
 metallb_repo_name: "metallb"
 metallb_repo_url: "https://metallb.github.io/metallb"
-metallb_chart_version: "0.15.3"
+metallb_chart_version: "0.16.1"
 
 #metallb ip pool
 metallb_ip_range: "10.0.20.200-10.0.20.230"
@@ -32,7 +32,7 @@ argocd_namespace: argocd
 argocd_release_name: argocd
 argocd_chart: argo/argo-cd
 argocd_repo_url: https://argoproj.github.io/argo-helm
-argocd_chart_version: 9.5.14
+argocd_chart_version: 10.10.1
 
 #cert-manager
 cert_manager_repo_name: jetstack
