@@ -3,10 +3,6 @@
   ansible.builtin.import_tasks: k3s.yaml
   when: inventory_hostname in groups['controllers']
 
-- name: Backup PVCs
-  ansible.builtin.import_tasks: pvc.yaml
-  when: inventory_hostname in groups['workers']
-
 - name: Backup Vault
   ansible.builtin.import_tasks: vault.yaml
   when: inventory_hostname in groups['vault']

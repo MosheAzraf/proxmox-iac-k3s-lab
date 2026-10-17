@@ -1,9 +1,9 @@
 ---
-- name: Require explicit restore confirmation
+- name: Require restore confirmation
   ansible.builtin.assert:
     that:
       - confirm_restore | default(false) | bool
-    fail_msg: "Restore blocked. Explicit confirmation is required."
+    fail_msg: "Restore blocked. Confirmation required."
 
 - name: Verify k3s backup
   delegate_to: localhost
@@ -27,27 +27,19 @@
           - "{{ lookup('env', 'HOME') }}/k3s-backups/k3s-backup.tar.gz"
       changed_when: false
 
-- name: Check existing restore state
+- name: Check previous restore files
   ansible.builtin.stat:
-    path: /var/lib/rancher/k3s/server/db.pre-restore
-  register: previous_db
+    path: "{{ item }}"
+  loop:
+    - /var/lib/rancher/k3s/server/db.pre-restore
+    - /var/lib/rancher/k3s/server/token.pre-restore
+  register: previous_restore
 
 - name: Require clean restore state
   ansible.builtin.assert:
     that:
-      - not previous_db.stat.exists
-    fail_msg: "Previous restore database exists. Restore blocked."
-
-- name: Check previous token backup
-  ansible.builtin.stat:
-    path: /var/lib/rancher/k3s/server/token.pre-restore
-  register: previous_token
-
-- name: Require clean token state
-  ansible.builtin.assert:
-    that:
-      - not previous_token.stat.exists
-    fail_msg: "Previous restore token exists. Restore blocked."
+      - previous_restore.results | selectattr('stat.exists') | list | length == 0
+    fail_msg: "Previous restore files exist. Restore blocked."
 
 - name: Upload k3s backup
   ansible.builtin.copy:
@@ -57,15 +49,15 @@
     group: root
     mode: "0600"
 
-- name: Restore k3s datastore
+- name: Restore k3s
   block:
-    - name: Stop k3s worker
+    - name: Stop worker
       ansible.builtin.systemd_service:
         name: k3s-agent
         state: stopped
       delegate_to: "{{ groups['workers'][0] }}"
 
-    - name: Stop k3s controller
+    - name: Stop controller
       ansible.builtin.systemd_service:
         name: k3s
         state: stopped
@@ -84,79 +76,91 @@
           - /var/lib/rancher/k3s/server/db
           - /var/lib/rancher/k3s/server/db.pre-restore
 
-    - name: Restore database and token
+    - name: Extract backup
       ansible.builtin.unarchive:
         src: /root/k3s-restore.tar.gz
         dest: /var/lib/rancher/k3s/server/
         remote_src: true
 
-    - name: Start k3s controller
+    - name: Start controller
       ansible.builtin.systemd_service:
         name: k3s
         state: started
 
-    - name: Start k3s worker
+    - name: Start worker
       ansible.builtin.systemd_service:
         name: k3s-agent
         state: started
       delegate_to: "{{ groups['workers'][0] }}"
 
-  rescue:
-    - name: Stop controller for rollback
-      ansible.builtin.systemd_service:
-        name: k3s
-        state: stopped
-      ignore_errors: true
-
-    - name: Check original database
-      ansible.builtin.stat:
-        path: /var/lib/rancher/k3s/server/db.pre-restore
-      register: rollback_db
-
-    - name: Remove failed database
-      ansible.builtin.file:
-        path: /var/lib/rancher/k3s/server/db
-        state: absent
-      when: rollback_db.stat.exists
-
-    - name: Restore original database
+    - name: Verify Kubernetes nodes
       ansible.builtin.command:
         argv:
-          - mv
-          - /var/lib/rancher/k3s/server/db.pre-restore
-          - /var/lib/rancher/k3s/server/db
-      when: rollback_db.stat.exists
+          - k3s
+          - kubectl
+          - wait
+          - --for=condition=Ready
+          - nodes
+          - --all
+          - --timeout=180s
+      changed_when: false
 
-    - name: Check original token
+  rescue:
+    - name: Check preserved database
       ansible.builtin.stat:
-        path: /var/lib/rancher/k3s/server/token.pre-restore
-      register: rollback_token
+        path: /var/lib/rancher/k3s/server/db.pre-restore
+      register: original_db
 
-    - name: Restore original token
-      ansible.builtin.copy:
-        src: /var/lib/rancher/k3s/server/token.pre-restore
-        dest: /var/lib/rancher/k3s/server/token
-        remote_src: true
-        mode: "0600"
-      when: rollback_token.stat.exists
+    - name: Rollback database
+      when: original_db.stat.exists
+      block:
+        - name: Stop controller for rollback
+          ansible.builtin.systemd_service:
+            name: k3s
+            state: stopped
 
-    - name: Start original controller
+        - name: Remove failed database
+          ansible.builtin.file:
+            path: /var/lib/rancher/k3s/server/db
+            state: absent
+
+        - name: Restore original database
+          ansible.builtin.command:
+            argv:
+              - mv
+              - /var/lib/rancher/k3s/server/db.pre-restore
+              - /var/lib/rancher/k3s/server/db
+
+        - name: Check original token
+          ansible.builtin.stat:
+            path: /var/lib/rancher/k3s/server/token.pre-restore
+          register: original_token
+
+        - name: Restore original token
+          ansible.builtin.copy:
+            src: /var/lib/rancher/k3s/server/token.pre-restore
+            dest: /var/lib/rancher/k3s/server/token
+            remote_src: true
+            mode: "0600"
+          when: original_token.stat.exists
+
+    - name: Report restore failure
+      ansible.builtin.fail:
+        msg: "k3s restore failed. Rollback attempted if database was preserved."
+
+  always:
+    - name: Start controller
       ansible.builtin.systemd_service:
         name: k3s
         state: started
 
-    - name: Start original worker
+    - name: Start worker
       ansible.builtin.systemd_service:
         name: k3s-agent
         state: started
       delegate_to: "{{ groups['workers'][0] }}"
 
-    - name: Report failed restore
-      ansible.builtin.fail:
-        msg: "k3s restore failed. Rollback attempted."
-
-  always:
-    - name: Remove temporary k3s archive
+    - name: Remove temporary archive
       ansible.builtin.file:
         path: /root/k3s-restore.tar.gz
         state: absent
