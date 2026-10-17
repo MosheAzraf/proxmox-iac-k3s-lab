@@ -1,6 +1,23 @@
+
 ---
-- name: Backup k3s, PVCs and Vault
-  hosts: k3s_cluster:vault
+- name: Backup k3s datastore
+  hosts: controllers
   become: true
   roles:
-    - backup
+    - role: backup
+      tasks_from: k3s
+
+- name: Backup local-path storage
+  hosts: workers
+  become: true
+  serial: 1
+  roles:
+    - role: backup
+      tasks_from: pvc
+
+- name: Backup Vault
+  hosts: vault
+  become: true
+  roles:
+    - role: backup
+      tasks_from: vault

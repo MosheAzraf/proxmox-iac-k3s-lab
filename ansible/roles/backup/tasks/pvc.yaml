@@ -1,57 +1,60 @@
 
 ---
-- name: Discover Kubernetes PVCs
-  kubernetes.core.k8s_info:
-    api_version: v1
-    kind: PersistentVolumeClaim
-  register: backup_pvcs
-  delegate_to: localhost
-  become: false
-  run_once: true
+- name: Backup local-path storage
+  when: not ansible_check_mode
+  block:
+    - name: Schedule emergency recovery
+      ansible.builtin.command:
+        argv:
+          - systemd-run
+          - --unit=k3s-backup-recovery
+          - --on-active=30min
+          - /usr/bin/systemctl
+          - start
+          - k3s-agent
 
-- name: Display discovered PVCs
-  ansible.builtin.debug:
-    msg: "{{ backup_pvcs.resources | map(attribute='metadata.name') | list }}"
-  run_once: true
+    - name: Stop k3s agent
+      ansible.builtin.systemd_service:
+        name: k3s-agent
+        state: stopped
 
-- name: Discover Persistent Volumes
-  kubernetes.core.k8s_info:
-    api_version: v1
-    kind: PersistentVolume
-  register: backup_pvs
-  delegate_to: localhost
-  become: false
-  run_once: true
+    - name: Stop remaining k3s containers
+      ansible.builtin.command:
+        cmd: /usr/local/bin/k3s-killall.sh
 
-- name: Display PVC storage mapping
-  ansible.builtin.debug:
-    msg:
-      claim: "{{ item.spec.claimRef.name }}"
-      namespace: "{{ item.spec.claimRef.namespace }}"
-      path: "{{ item.spec.local.path | default('Not local storage') }}"
-  loop: "{{ backup_pvs.resources }}"
-  when: item.spec.claimRef is defined
-  run_once: true
+    - name: Archive storage
+      ansible.builtin.command:
+        argv:
+          - tar
+          - -czf
+          - /root/pvc-backup.tar.gz
+          - -C
+          - /var/lib/rancher/k3s
+          - storage
 
-- name: Build PVC backup mapping
-  ansible.builtin.set_fact:
-    backup_pvc_map: >-
-      {{
-        (backup_pvc_map | default([])) + [{
-          'namespace': item.spec.claimRef.namespace,
-          'claim': item.spec.claimRef.name,
-          'node': item.spec.nodeAffinity.required.nodeSelectorTerms[0].matchExpressions[0]['values'][0],
-          'path': item.spec.local.path
-        }]
-      }}
-  loop: "{{ backup_pvs.resources }}"
-  when:
-    - item.spec.claimRef is defined
-    - item.spec.local is defined
-    - item.spec.nodeAffinity is defined
-  run_once: true
+    - name: Download backup
+      ansible.builtin.fetch:
+        src: /root/pvc-backup.tar.gz
+        dest: "{{ lookup('env', 'HOME') }}/k3s-backups/{{ inventory_hostname }}-pvc.tar.gz"
+        flat: true
 
-- name: Display PVC backup mapping
-  ansible.builtin.debug:
-    var: backup_pvc_map
-  run_once: true
+  always:
+    - name: Reconnect to worker
+      ansible.builtin.wait_for_connection:
+        timeout: 120
+        delay: 5
+
+    - name: Start k3s agent
+      ansible.builtin.systemd_service:
+        name: k3s-agent
+        state: started
+
+    - name: Cancel emergency recovery
+      ansible.builtin.systemd_service:
+        name: k3s-backup-recovery.timer
+        state: stopped
+
+    - name: Remove temporary archive
+      ansible.builtin.file:
+        path: /root/pvc-backup.tar.gz
+        state: absent
