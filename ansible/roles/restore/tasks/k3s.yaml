@@ -1,0 +1,28 @@
+---
+- name: Require explicit restore confirmation
+  ansible.builtin.assert:
+    that:
+      - confirm_restore | default(false) | bool
+    fail_msg: "Restore blocked. Explicit confirmation is required."
+
+- name: Verify k3s backup
+  delegate_to: localhost
+  become: false
+  block:
+    - name: Check backup archive
+      ansible.builtin.stat:
+        path: "{{ lookup('env', 'HOME') }}/k3s-backups/k3s-backup.tar.gz"
+      register: k3s_backup
+
+    - name: Require backup archive
+      ansible.builtin.assert:
+        that:
+          - k3s_backup.stat.isreg | default(false)
+
+    - name: Verify archive integrity
+      ansible.builtin.command:
+        argv:
+          - tar
+          - -tzf
+          - "{{ lookup('env', 'HOME') }}/k3s-backups/k3s-backup.tar.gz"
+      changed_when: false

@@ -1,0 +1,18 @@
+---
+- name: Restore k3s datastore
+  hosts: controllers
+  become: true
+  tasks:
+    - name: Run k3s restore
+      ansible.builtin.import_role:
+        name: restore
+        tasks_from: k3s
+
+- name: Restore Vault
+  hosts: vault
+  become: true
+  tasks:
+    - name: Run Vault restore
+      ansible.builtin.import_role:
+        name: restore
+        tasks_from: vault

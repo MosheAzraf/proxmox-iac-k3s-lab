@@ -1,0 +1,25 @@
+---
+- name: Verify Vault backup
+  delegate_to: localhost
+  become: false
+  block:
+    - name: Check encrypted backup
+      ansible.builtin.stat:
+        path: "{{ lookup('env', 'HOME') }}/k3s-backups/vault-backup.tar.gz"
+      register: vault_backup
+
+    - name: Require encrypted backup
+      ansible.builtin.assert:
+        that:
+          - vault_backup.stat.isreg | default(false)
+
+    - name: Verify backup decryption
+      ansible.builtin.command:
+        argv:
+          - ansible-vault
+          - view
+          - --vault-password-file
+          - "{{ lookup('env', 'HOME') }}/.k3s-backup-password"
+          - "{{ lookup('env', 'HOME') }}/k3s-backups/vault-backup.tar.gz"
+      changed_when: false
+      no_log: true
