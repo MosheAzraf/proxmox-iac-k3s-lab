@@ -1,6 +1,6 @@
 ---
-- name: Backup k3s cluster
-  hosts: controllers
+- name: Backup k3s, PVCs and Vault
+  hosts: k3s_cluster:vault
   become: true
   roles:
     - backup

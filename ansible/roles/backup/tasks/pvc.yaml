@@ -1,0 +1,57 @@
+
+---
+- name: Discover Kubernetes PVCs
+  kubernetes.core.k8s_info:
+    api_version: v1
+    kind: PersistentVolumeClaim
+  register: backup_pvcs
+  delegate_to: localhost
+  become: false
+  run_once: true
+
+- name: Display discovered PVCs
+  ansible.builtin.debug:
+    msg: "{{ backup_pvcs.resources | map(attribute='metadata.name') | list }}"
+  run_once: true
+
+- name: Discover Persistent Volumes
+  kubernetes.core.k8s_info:
+    api_version: v1
+    kind: PersistentVolume
+  register: backup_pvs
+  delegate_to: localhost
+  become: false
+  run_once: true
+
+- name: Display PVC storage mapping
+  ansible.builtin.debug:
+    msg:
+      claim: "{{ item.spec.claimRef.name }}"
+      namespace: "{{ item.spec.claimRef.namespace }}"
+      path: "{{ item.spec.local.path | default('Not local storage') }}"
+  loop: "{{ backup_pvs.resources }}"
+  when: item.spec.claimRef is defined
+  run_once: true
+
+- name: Build PVC backup mapping
+  ansible.builtin.set_fact:
+    backup_pvc_map: >-
+      {{
+        (backup_pvc_map | default([])) + [{
+          'namespace': item.spec.claimRef.namespace,
+          'claim': item.spec.claimRef.name,
+          'node': item.spec.nodeAffinity.required.nodeSelectorTerms[0].matchExpressions[0]['values'][0],
+          'path': item.spec.local.path
+        }]
+      }}
+  loop: "{{ backup_pvs.resources }}"
+  when:
+    - item.spec.claimRef is defined
+    - item.spec.local is defined
+    - item.spec.nodeAffinity is defined
+  run_once: true
+
+- name: Display PVC backup mapping
+  ansible.builtin.debug:
+    var: backup_pvc_map
+  run_once: true

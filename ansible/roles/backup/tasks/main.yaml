@@ -1,55 +1,12 @@
 ---
-- name: Backup k3s datastore
-  block:
-    - name: Stop k3s
-      ansible.builtin.systemd_service:
-        name: k3s
-        state: stopped
+- name: Backup k3s
+  ansible.builtin.import_tasks: k3s.yaml
+  when: inventory_hostname in groups['controllers']
 
-    - name: Archive k3s database and token
-      ansible.builtin.command:
-        argv:
-          - tar
-          - -czf
-          - /root/k3s-backup.tar.gz
-          - -C
-          - /var/lib/rancher/k3s/server
-          - db
-          - token
+- name: Backup PVCs
+  ansible.builtin.import_tasks: pvc.yaml
+  when: inventory_hostname in groups['workers']
 
-  always:
-    - name: Start k3s
-      ansible.builtin.systemd_service:
-        name: k3s
-        state: started
-
-- name: Secure backup archive
-  ansible.builtin.file:
-    path: /root/k3s-backup.tar.gz
-    mode: "0600"
-
-- name: Create local backup directory
-  ansible.builtin.file:
-    path: "{{ lookup('env', 'HOME') }}/k3s-backups"
-    state: directory
-    mode: "0700"
-  delegate_to: localhost
-  become: false
-
-- name: Fetch backup to local machine
-  ansible.builtin.fetch:
-    src: /root/k3s-backup.tar.gz
-    dest: "{{ lookup('env', 'HOME') }}/k3s-backups/k3s-backup.tar.gz"
-    flat: true
-
-- name: Secure local backup
-  ansible.builtin.file:
-    path: "{{ lookup('env', 'HOME') }}/k3s-backups/k3s-backup.tar.gz"
-    mode: "0600"
-  delegate_to: localhost
-  become: false
-
-- name: Remove temporary backup
-  ansible.builtin.file:
-    path: /root/k3s-backup.tar.gz
-    state: absent
+- name: Backup Vault
+  ansible.builtin.import_tasks: vault.yaml
+  when: inventory_hostname in groups['vault']
