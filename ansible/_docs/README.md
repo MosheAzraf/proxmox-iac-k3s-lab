@@ -126,6 +126,49 @@ kubectl get externalsecrets -A
 
 The store should report `Valid` / `Ready=True` and the secrets should report `SecretSynced` / `Ready=True`.
 
+## Backup and Disaster Recovery
+
+Backups cover the k3s controller's SQLite datastore and server token, plus the external Vault LXC's file storage and unseal key. **Application PVC data is not included.**
+
+### Backup
+
+Run from `ansible/`:
+
+```bash
+ansible-playbook playbooks/backup.yaml
+```
+
+Backups are saved to `~/k3s-backups/` on the control machine:
+
+- `k3s-backup.tar.gz` — k3s SQLite datastore and server token (not encrypted).
+- `vault-backup.tar.gz` — Vault file storage and unseal key, encrypted with Ansible Vault.
+
+Keep `~/.k3s-backup-password` secure and separate from the backups. Do not commit backups, tokens or encryption passwords to Git.
+
+### Restore
+
+Run from `ansible/` after confirming the local backups are available and taking Proxmox snapshots or equivalent independent recovery points:
+
+```bash
+ansible-playbook playbooks/restore.yaml --syntax-check
+ansible-playbook playbooks/restore.yaml -e confirm_restore=true
+```
+
+The restore temporarily stops the k3s worker, controller and Vault services as needed, preserves existing server data using `.pre-restore` paths, and attempts rollback on task failures. Rollback is **not guaranteed** for every failure; the restore also requires downtime.
+
+### Verification
+
+```bash
+kubectl get nodes
+kubectl get applications -n argocd
+kubectl get clustersecretstore vault-k3s
+kubectl get externalsecrets -A
+```
+
+A real restore was successfully executed on the existing lab: both nodes returned to `Ready`, all 19 Argo CD applications reported `Synced / Healthy`, and all three ExternalSecrets reported `SecretSynced / Ready=True` when checked. The ExternalSecrets last-sync timestamps were not refreshed during that check.
+
+**Scope:** k3s datastore and external Vault only. PVC data recovery and a full infrastructure rebuild from scratch were not tested.
+
 ## Legacy Bootstrap Playbooks
 
 The following playbooks are retained only as legacy/bootstrap code:
