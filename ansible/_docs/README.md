@@ -1,3 +1,4 @@
+
 # Ansible Layer
 
 Project-specific notes for the Ansible bootstrap layer of `proxmox-iac-k3s-lab`.
@@ -148,6 +149,8 @@ Keep `~/.k3s-backup-password` secure and separate from the backups. Do not commi
 ### Restore
 
 Run from `ansible/` after confirming the local backups are available and taking Proxmox snapshots or equivalent independent recovery points:
+
+In the tested workflow, Proxmox snapshots were created **before updating** k3s (`before-updates-2026-10-05` on VMs 201 and 202) and **before restoring** (`pre-restore` on VMs 201 and 202 and Vault CT 210). Snapshots were not a step performed before the backup command itself.
 
 ```bash
 ansible-playbook playbooks/restore.yaml --syntax-check
