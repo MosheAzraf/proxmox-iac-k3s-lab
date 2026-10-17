@@ -1,0 +1,8 @@
+---
+- name: Backup k3s
+  ansible.builtin.import_tasks: k3s.yaml
+  when: inventory_hostname in groups['controllers']
+
+- name: Backup Vault
+  ansible.builtin.import_tasks: vault.yaml
+  when: inventory_hostname in groups['vault']

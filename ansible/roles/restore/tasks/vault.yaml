@@ -5,7 +5,7 @@
       - confirm_restore | default(false) | bool
     fail_msg: "Restore blocked. Confirmation required."
 
-- name: Check previous restore
+- name: Check previous restore files
   ansible.builtin.stat:
     path: "{{ item }}"
   loop:
@@ -13,13 +13,13 @@
     - /etc/vault.d/unseal.key.pre-restore
   register: previous_restore
 
-- name: Prevent overwriting previous restore
+- name: Require clean restore state
   ansible.builtin.assert:
     that:
-      - not (previous_restore.results | selectattr('stat.exists') | list | length > 0)
-    fail_msg: "Previous restore files exist."
+      - previous_restore.results | selectattr('stat.exists') | list | length == 0
+    fail_msg: "Previous restore files exist. Restore blocked."
 
-- name: Restore Vault
+- name: Prepare Vault backup
   block:
     - name: Create temporary local file
       ansible.builtin.tempfile:
@@ -43,7 +43,7 @@
       become: false
       no_log: true
 
-    - name: Verify archive
+    - name: Verify backup archive
       ansible.builtin.command:
         argv:
           - tar
@@ -57,116 +57,130 @@
       ansible.builtin.copy:
         src: "{{ vault_temp.path }}"
         dest: /root/vault-restore.tar.gz
+        owner: root
+        group: root
         mode: "0600"
       no_log: true
 
-    - name: Stop Vault
-      ansible.builtin.systemd_service:
-        name: vault
-        state: stopped
-
-    - name: Preserve existing unseal key
-      ansible.builtin.copy:
-        src: /etc/vault.d/unseal.key
-        dest: /etc/vault.d/unseal.key.pre-restore
-        remote_src: true
-        mode: "0600"
-      no_log: true
-
-    - name: Preserve existing data
-      ansible.builtin.command:
-        argv:
-          - mv
-          - /opt/vault/data
-          - /opt/vault/data.pre-restore
-
-    - name: Extract backup
-      ansible.builtin.unarchive:
-        src: /root/vault-restore.tar.gz
-        dest: /
-        remote_src: true
-      no_log: true
-
-    - name: Secure unseal key
-      ansible.builtin.file:
-        path: /etc/vault.d/unseal.key
-        mode: "0600"
-
-    - name: Start Vault
-      ansible.builtin.systemd_service:
-        name: vault
-        state: started
-
-    - name: Unseal Vault
-      ansible.builtin.systemd_service:
-        name: vault-unseal
-        state: restarted
-
-    - name: Verify Vault status
-      ansible.builtin.command:
-        argv:
-          - vault
-          - status
-          - -address=http://127.0.0.1:8200
-      register: vault_status
-      retries: 5
-      delay: 3
-      until: vault_status.rc == 0
-      changed_when: false
-
-  rescue:
-    - name: Stop Vault for rollback
-      ansible.builtin.systemd_service:
-        name: vault
-        state: stopped
-
-    - name: Check preserved data
-      ansible.builtin.stat:
-        path: /opt/vault/data.pre-restore
-      register: original_data
-
-    - name: Restore original data
-      when: original_data.stat.exists
+    - name: Restore Vault
       block:
-        - name: Remove failed data
-          ansible.builtin.file:
-            path: /opt/vault/data
-            state: absent
+        - name: Stop Vault
+          ansible.builtin.systemd_service:
+            name: vault
+            state: stopped
 
-        - name: Move original data back
+        - name: Preserve existing unseal key
+          ansible.builtin.copy:
+            src: /etc/vault.d/unseal.key
+            dest: /etc/vault.d/unseal.key.pre-restore
+            remote_src: true
+            mode: "0600"
+          no_log: true
+
+        - name: Preserve existing data
           ansible.builtin.command:
             argv:
               - mv
-              - /opt/vault/data.pre-restore
               - /opt/vault/data
+              - /opt/vault/data.pre-restore
 
-    - name: Check preserved unseal key
-      ansible.builtin.stat:
-        path: /etc/vault.d/unseal.key.pre-restore
-      register: original_key
+        - name: Extract backup
+          ansible.builtin.unarchive:
+            src: /root/vault-restore.tar.gz
+            dest: /
+            remote_src: true
+          no_log: true
 
-    - name: Restore original unseal key
-      ansible.builtin.copy:
-        src: /etc/vault.d/unseal.key.pre-restore
-        dest: /etc/vault.d/unseal.key
-        remote_src: true
-        mode: "0600"
-      when: original_key.stat.exists
-      no_log: true
+        - name: Secure unseal key
+          ansible.builtin.file:
+            path: /etc/vault.d/unseal.key
+            owner: root
+            group: root
+            mode: "0600"
 
-    - name: Start original Vault
-      ansible.builtin.systemd_service:
-        name: vault
-        state: started
+        - name: Start Vault
+          ansible.builtin.systemd_service:
+            name: vault
+            state: started
 
-    - name: Unseal original Vault
-      ansible.builtin.systemd_service:
-        name: vault-unseal
-        state: restarted
+        - name: Unseal Vault
+          ansible.builtin.systemd_service:
+            name: vault-unseal
+            state: restarted
 
-    - name: Report restore failure
-      ansible.builtin.fail:
-        msg: "Vault restore failed. Rollback attempted."
+        - name: Verify Vault status
+          ansible.builtin.command:
+            argv:
+              - vault
+              - status
+              - -address=http://127.0.0.1:8200
+          register: vault_status
+          retries: 5
+          delay: 3
+          until: vault_status.rc == 0
+          changed_when: false
+
+      rescue:
+        - name: Stop Vault for rollback
+          ansible.builtin.systemd_service:
+            name: vault
+            state: stopped
+
+        - name: Check preserved data
+          ansible.builtin.stat:
+            path: /opt/vault/data.pre-restore
+          register: original_data
+
+        - name: Restore original data
+          when: original_data.stat.exists
+          block:
+            - name: Remove failed data
+              ansible.builtin.file:
+                path: /opt/vault/data
+                state: absent
+
+            - name: Move original data back
+              ansible.builtin.command:
+                argv:
+                  - mv
+                  - /opt/vault/data.pre-restore
+                  - /opt/vault/data
+
+        - name: Check preserved unseal key
+          ansible.builtin.stat:
+            path: /etc/vault.d/unseal.key.pre-restore
+          register: original_key
+
+        - name: Restore original unseal key
+          ansible.builtin.copy:
+            src: /etc/vault.d/unseal.key.pre-restore
+            dest: /etc/vault.d/unseal.key
+            remote_src: true
+            mode: "0600"
+          when: original_key.stat.exists
+          no_log: true
+
+        - name: Start original Vault
+          ansible.builtin.systemd_service:
+            name: vault
+            state: started
+
+        - name: Unseal original Vault
+          ansible.builtin.systemd_service:
+            name: vault-unseal
+            state: restarted
+
+        - name: Verify original Vault status
+          ansible.builtin.command:
+            argv:
+              - vault
+              - status
+              - -address=http://127.0.0.1:8200
+          changed_when: false
+
+        - name: Report failed restore
+          ansible.builtin.fail:
+            msg: "Vault restore failed. Rollback attempted."
 
   always:
     - name: Remove remote temporary archive
