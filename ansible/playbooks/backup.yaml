@@ -1,0 +1,6 @@
+---
+- name: Backup k3s cluster
+  hosts: controllers
+  become: true
+  roles:
+    - backup
