@@ -1,9 +1,10 @@
 ---
-# Runs locally and requires Helm + kubectl configured on the development machine
-- name: install argocd
+- name: Install Argo CD
   hosts: localhost
   connection: local
   gather_facts: false
   become: false
+  environment:
+    KUBECONFIG: "{{ lookup('env', 'HOME') }}/.kube/proxmox-iac-k3s.yaml"
   roles:
     - argocd

@@ -1,11 +1,17 @@
+
 ---
-# Runs locally and requires Helm + kubeconfig configured on the development machine
-- name: add argocd helm repo
+- name: Add Argo CD Helm repository
   kubernetes.core.helm_repository:
-    name: "{{ argocd_release_name }}"
+    name: "{{ argocd_repo_name }}"
     repo_url: "{{ argocd_repo_url }}"
 
-- name: install argocd
+- name: Check existing Argo CD Helm release
+  kubernetes.core.helm_info:
+    name: "{{ argocd_release_name }}"
+    release_namespace: "{{ argocd_namespace }}"
+  register: argocd_release
+
+- name: Install Argo CD for initial bootstrap
   kubernetes.core.helm:
     name: "{{ argocd_release_name }}"
     chart_ref: "{{ argocd_chart }}"
@@ -13,3 +19,5 @@
     release_namespace: "{{ argocd_namespace }}"
     create_namespace: true
     wait: true
+    kubeconfig: "{{ lookup('env', 'HOME') }}/.kube/proxmox-iac-k3s.yaml"
+  when: argocd_release.status is not defined

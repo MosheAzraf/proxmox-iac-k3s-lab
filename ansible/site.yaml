@@ -1,0 +1,38 @@
+---
+- name: Confirm installation
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  tags: always
+  tasks:
+    - name: Require installation approval
+      ansible.builtin.assert:
+        that:
+          - confirm_install | default(false) | bool
+        fail_msg: "Installation blocked. Set confirm_install=true."
+
+- import_playbook: playbooks/common.yaml
+- import_playbook: playbooks/k3s_controller.yaml
+- import_playbook: playbooks/k3s_worker.yaml
+
+- name: Configure local kubeconfig
+  hosts: controllers
+  become: true
+  roles:
+    - kubeconfig
+
+- import_playbook: playbooks/traefik_install.yaml
+- import_playbook: playbooks/argocd.yaml
+- import_playbook: playbooks/vault.yaml
+
+- name: Bootstrap GitOps
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  become: false
+  environment:
+    KUBECONFIG: "{{ lookup('env', 'HOME') }}/.kube/proxmox-iac-k3s.yaml"
+  tasks:
+    - name: Apply root application
+      ansible.builtin.command:
+        cmd: kubectl apply -f "{{ playbook_dir }}/../_kubernetes/bootstrap/root-app.yaml"

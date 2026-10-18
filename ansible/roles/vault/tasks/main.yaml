@@ -91,4 +91,5 @@
 - name: Configure Vault Kubernetes authentication
   ansible.builtin.import_tasks: kubernetes-auth.yaml
   tags:
+    - never
     - vault-kubernetes-auth

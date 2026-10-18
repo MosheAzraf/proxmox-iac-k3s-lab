@@ -1,0 +1,26 @@
+---
+- name: Read k3s kubeconfig
+  ansible.builtin.slurp:
+    src: /etc/rancher/k3s/k3s.yaml
+  register: k3s_kubeconfig
+  no_log: true
+
+- name: Create local kubeconfig directory
+  ansible.builtin.file:
+    path: "{{ lookup('env', 'HOME') }}/.kube"
+    state: directory
+    mode: "0700"
+  delegate_to: localhost
+  become: false
+
+- name: Save local kubeconfig
+  ansible.builtin.copy:
+    content: >-
+      {{ k3s_kubeconfig.content | b64decode |
+         regex_replace('server: https://127\.0\.0\.1:6443',
+                       'server: https://' ~ ansible_host ~ ':6443') }}
+    dest: "{{ lookup('env', 'HOME') }}/.kube/proxmox-iac-k3s.yaml"
+    mode: "0600"
+  delegate_to: localhost
+  become: false
+  no_log: true
