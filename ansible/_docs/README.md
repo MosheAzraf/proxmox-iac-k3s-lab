@@ -1,4 +1,3 @@
-
 # Ansible Layer
 
 Project-specific notes for the Ansible bootstrap layer of `proxmox-iac-k3s-lab`.
@@ -7,9 +6,10 @@ Ansible configures the Terraform-provisioned hosts and bootstraps k3s, Vault, an
 
 ## Source Of Truth
 
+* `site.yaml` - central entry point for initial bootstrap.
 * `inventory.ini` - hosts and connection settings.
 * `group_vars/all.yaml` - shared versions and configuration.
-* `playbooks/` - runnable entry points.
+* `playbooks/` - individual runnable entry points.
 * `roles/` - implementation.
 
 Read these files for current addresses, versions, and component settings.
@@ -18,7 +18,7 @@ Read these files for current addresses, versions, and component settings.
 
 Ansible is responsible for the initial bootstrap phase.
 
-It configures the provisioned machines, installs k3s, joins the worker node, and installs the initial platform components required before GitOps management is active.
+It configures the provisioned machines, installs k3s, joins the worker node, creates a local kubeconfig, and installs the initial platform components required before GitOps management is active.
 
 Main responsibilities:
 
@@ -26,45 +26,86 @@ Main responsibilities:
 Base host configuration
 k3s controller setup
 k3s worker setup
+Local kubeconfig generation
 Traefik bootstrap
 Argo CD bootstrap
 Vault LXC configuration
-Vault Kubernetes authentication for External Secrets
+Argo CD root application bootstrap
+Vault Kubernetes authentication for External Secrets (separate step)
 ```
 
 Some older playbooks are retained for rebuild or bootstrap scenarios, but ongoing platform management should happen through Argo CD and the `_kubernetes` directory.
 
 ## Prerequisites
 
-The control machine needs Ansible, Helm, `kubectl`, an active kubeconfig, and the required Ansible collection:
+The control machine needs Ansible, Helm, `kubectl`, and the required Ansible collection:
 
 ```bash
 ansible-galaxy collection install kubernetes.core
 ```
 
-The Terraform layer should be applied before running the main Ansible playbooks.
+The Terraform layer should be applied before running Ansible. The control machine must be able to reach the provisioned hosts and the Kubernetes API.
 
-## Run
+## Central Bootstrap: `site.yaml`
 
-Run commands from `ansible/`:
+Run commands from `ansible/`.
+
+The central playbook imports the existing playbooks and runs the following in order:
+
+1. Configure common settings on k3s nodes.
+2. Install the k3s controller and join worker nodes.
+3. Copy the controller's kubeconfig to the control machine.
+4. Bootstrap Traefik and Argo CD.
+5. Install/configure the Vault LXC service.
+6. Apply the Argo CD root application to start GitOps reconciliation.
+
+The entry point requires an explicit `confirm_install=true` variable. **It is intended for fresh installations, not routine execution against the running cluster.** Approval is not a guarantee that existing resources will be preserved.
+
+For a planned fresh installation, after verifying backups and the target environment, the invocation is:
 
 ```bash
-ansible all -m ping
-ansible-playbook playbooks/common.yaml
-ansible-playbook playbooks/k3s_controller.yaml
-ansible-playbook playbooks/k3s_worker.yaml
-ansible-playbook playbooks/traefik.yaml
-ansible-playbook playbooks/argocd.yaml
-ansible-playbook playbooks/vault.yaml --skip-tags vault-kubernetes-auth
+ansible-playbook site.yaml -e confirm_install=true
 ```
 
-The local Kubernetes playbooks use the current `kubectl` context.
+Do **not** run this command against the existing lab simply to verify the playbook: bootstrap Helm tasks and the root application can modify cluster resources. A full fresh installation has **not yet been tested**.
 
-Verify the current context before running Kubernetes-related playbooks:
+### Local kubeconfig
+
+The `kubeconfig` role reads `/etc/rancher/k3s/k3s.yaml` from the controller, replaces its localhost API server address with the controller's inventory address, and writes a separate local file:
+
+```text
+~/.kube/proxmox-iac-k3s.yaml
+```
+
+This file has permission mode `0600` and does not overwrite the default `~/.kube/config`. The Traefik and Argo CD bootstrap playbooks use this kubeconfig, and the root application bootstrap sets `KUBECONFIG` to this path.
+
+To use it manually:
 
 ```bash
-kubectl config current-context
+KUBECONFIG="$HOME/.kube/proxmox-iac-k3s.yaml" kubectl get nodes
 ```
+
+The kubeconfig contains cluster credentials: keep it outside the repository and do not commit it to Git.
+
+### Bootstrap limitations
+
+- The `site.yaml` flow includes Vault service installation but **does not automate Vault initialization**, initial unseal, secret creation, or creation of the `eso-read` policy.
+- Vault Kubernetes authentication is excluded from ordinary Vault installation and must be configured separately **after** the required Vault and Argo CD resources exist.
+- Argo CD's bootstrap Helm logic checks for an existing Helm release and skips installation when one is found. This does not prove a clean installation will succeed or prevent every ownership conflict involving existing resources.
+- Once Argo CD has taken ownership of platform resources, normal updates belong in `_kubernetes/`, not the original bootstrap playbooks.
+
+## Validation Performed (18 October 2026)
+
+The following checks were completed on the existing lab:
+
+- `ansible-playbook site.yaml --syntax-check` — passed.
+- `ansible-playbook site.yaml --list-tasks` — loaded the expected bootstrap plays and tasks in order.
+- Generated kubeconfig — tested with `kubectl get nodes`; both k3s nodes reported `Ready`.
+- `ansible-playbook site.yaml --check --diff -e confirm_install=true` — completed with zero reported changes and zero failures. Some shell/command and bootstrap tasks were skipped by check mode, so this is **not** evidence of a complete installation.
+
+Proxmox snapshots named `pre-site-test` were created for controller VM 201, worker VM 202 and Vault CT 210 before the planned rebuild exercise. Thin-pool capacity warnings were reported during snapshot creation. Snapshots are recovery points, not substitutes for independent backups, and may not provide application-consistent recovery.
+
+**Next planned test:** a controlled rebuild of the environment from scratch, with a separately verified recovery path. This test has not been executed yet.
 
 ## Vault Kubernetes Authentication
 
@@ -72,7 +113,7 @@ Vault runs outside the k3s cluster in a Proxmox LXC container. External Secrets 
 
 ### Configuration files
 
-- `roles/vault/tasks/main.yaml` — installs Vault and imports the tagged Kubernetes authentication tasks.
+- `roles/vault/tasks/main.yaml` — installs Vault and imports the tagged Kubernetes authentication tasks, excluded by default with `never`.
 - `roles/vault/tasks/kubernetes-auth.yaml` — enables the Kubernetes auth method, configures the Kubernetes API and cluster CA certificate, and creates the `external-secrets` Vault role.
 - `group_vars/all.yaml` — supplies the Kubernetes API address, Vault role, namespace, ServiceAccount, policy and audience.
 - `playbooks/vault.yaml` — obtains the Vault administrator token from the local `VAULT_TOKEN` environment variable.
@@ -105,15 +146,16 @@ The lab's disk-based unseal helper in `roles/vault/` is a convenience for a loca
 
 ### Configure through Ansible
 
-Run from `ansible/` on the Mac, using a **Vault LXC administrator token**, not the token from the separate local development Vault:
+Run from `ansible/` on the Mac, using a **Vault LXC administrator token**, not the token from the separate local development Vault. Set `KUBECONFIG` so the local `kubectl` lookup uses the generated file:
 
 ```bash
 read -s VAULT_TOKEN && export VAULT_TOKEN
+export KUBECONFIG="$HOME/.kube/proxmox-iac-k3s.yaml"
 ansible-playbook playbooks/vault.yaml --tags vault-kubernetes-auth
 unset VAULT_TOKEN
 ```
 
-The auth tasks read the Kubernetes CA certificate through the control machine's `kubectl` context. The Vault role is bound to the `vault-auth` ServiceAccount in `external-secrets`, with policy `eso-read` and the configured Kubernetes token audience.
+Run this only when the prerequisites above are met. The auth tasks read the Kubernetes CA certificate through the control machine's `kubectl` context. The Vault role is bound to the `vault-auth` ServiceAccount in `external-secrets`, with policy `eso-read` and the configured Kubernetes token audience.
 
 After the initial setup, External Secrets obtains short-lived Vault tokens by authenticating with Kubernetes ServiceAccount credentials. There is no ongoing manual Vault token renewal. The initial Vault setup, administrator credential supply and application secret creation are **not yet unattended**.
 
