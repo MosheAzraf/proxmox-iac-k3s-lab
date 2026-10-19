@@ -5,6 +5,6 @@
   gather_facts: false
   become: false
   environment:
-    KUBECONFIG: "{{ lookup('env', 'HOME') }}/.kube/proxmox-iac-k3s.yaml"
+    KUBECONFIG: "{{ lookup('env', 'HOME') }}/.kube/config"
   roles:
     - argocd
