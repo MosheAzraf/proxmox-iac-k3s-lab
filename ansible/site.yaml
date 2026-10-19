@@ -1,3 +1,4 @@
+
 ---
 - name: Confirm installation
   hosts: localhost
@@ -19,7 +20,8 @@
   hosts: controllers
   become: true
   roles:
-    - kubeconfig
+    - role: kubeconfig
+      tags: kubeconfig
 
 - import_playbook: playbooks/traefik_install.yaml
 - import_playbook: playbooks/argocd.yaml
@@ -31,7 +33,7 @@
   gather_facts: false
   become: false
   environment:
-    KUBECONFIG: "{{ lookup('env', 'HOME') }}/.kube/proxmox-iac-k3s.yaml"
+    KUBECONFIG: "{{ lookup('env', 'HOME') }}/.kube/config"
   tasks:
     - name: Apply root application
       ansible.builtin.command:

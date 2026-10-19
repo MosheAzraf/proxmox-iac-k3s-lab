@@ -1,3 +1,4 @@
+
 ---
 - name: Read k3s kubeconfig
   ansible.builtin.slurp:
@@ -13,14 +14,74 @@
   delegate_to: localhost
   become: false
 
-- name: Save local kubeconfig
-  ansible.builtin.copy:
-    content: >-
-      {{ k3s_kubeconfig.content | b64decode |
-         regex_replace('server: https://127\.0\.0\.1:6443',
-                       'server: https://' ~ ansible_host ~ ':6443') }}
-    dest: "{{ lookup('env', 'HOME') }}/.kube/proxmox-iac-k3s.yaml"
-    mode: "0600"
-  delegate_to: localhost
-  become: false
-  no_log: true
+- name: Update local kubeconfig
+  vars:
+    kubeconfig_path: "{{ lookup('env', 'HOME') }}/.kube/config"
+    cluster_name: proxmox-iac-k3s
+    source_config: "{{ k3s_kubeconfig.content | b64decode | from_yaml }}"
+  block:
+    - name: Read existing local kubeconfig
+      ansible.builtin.slurp:
+        src: "{{ kubeconfig_path }}"
+      register: existing_kubeconfig
+      failed_when: false
+      delegate_to: localhost
+      become: false
+      no_log: true
+
+    - name: Build merged kubeconfig
+      ansible.builtin.set_fact:
+        merged_kubeconfig:
+          apiVersion: v1
+          kind: Config
+          preferences: {}
+          clusters: >-
+            {{
+              (old_config.clusters | default([])
+               | rejectattr('name', 'equalto', cluster_name) | list)
+              + [{
+                'name': cluster_name,
+                'cluster': source_config.clusters[0].cluster
+                  | combine({'server': 'https://' ~ ansible_host ~ ':6443'})
+              }]
+            }}
+          users: >-
+            {{
+              (old_config.users | default([])
+               | rejectattr('name', 'equalto', cluster_name) | list)
+              + [{
+                'name': cluster_name,
+                'user': source_config.users[0].user
+              }]
+            }}
+          contexts: >-
+            {{
+              (old_config.contexts | default([])
+               | rejectattr('name', 'equalto', cluster_name) | list)
+              + [{
+                'name': cluster_name,
+                'context': {
+                  'cluster': cluster_name,
+                  'user': cluster_name
+                }
+              }]
+            }}
+          current-context: "{{ cluster_name }}"
+      vars:
+        old_config: >-
+          {{
+            (existing_kubeconfig.content | b64decode | from_yaml)
+            if existing_kubeconfig.content is defined
+            else {}
+          }}
+      no_log: true
+
+    - name: Save merged kubeconfig
+      ansible.builtin.copy:
+        content: "{{ merged_kubeconfig | to_nice_yaml }}"
+        dest: "{{ kubeconfig_path }}"
+        mode: "0600"
+        backup: true
+      delegate_to: localhost
+      become: false
+      no_log: true
