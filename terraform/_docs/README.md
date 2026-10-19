@@ -211,6 +211,12 @@ proxmox_token_secret
 
 Kubernetes application secrets are documented in the [Kubernetes / GitOps Layer](../../_kubernetes/_docs/README.md).
 
+## Tested fresh rebuild
+
+On 19 October 2026, the two Terraform roots were used to destroy and recreate the k3s VMs (`201`, `202`) and Vault LXC (`210`). Both `destroy` and subsequent `apply` completed successfully. VM template `9000`, LXC Ubuntu template, Proxmox API access, local **development** Vault and SSH public key are prerequisites and were not destroyed. Run `plan -destroy` and review the exact resources before a deliberate teardown; deleting a guest also removes its guest-local snapshots. **Do not destroy the infrastructure just to perform an initial installation.**
+
+The full [initial installation and optional destructive rebuild procedure](../../INSTALLATION.md) includes the post-Terraform SSH readiness delay and Ansible bootstrap.
+
 ## Run
 
 Run commands from the repository root.

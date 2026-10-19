@@ -1,311 +1,62 @@
 # Proxmox IaC K3s Lab
 
-Infrastructure as Code lab project for provisioning and bootstrapping a small k3s Kubernetes cluster on Proxmox.
+A hands-on Infrastructure as Code homelab built on Proxmox. It demonstrates the full lifecycle of a small Kubernetes environment: provisioning, bootstrapping, GitOps reconciliation, secrets management, updates, and local disaster recovery.
 
-The goal of this project is to simulate a production-like infrastructure workflow in a home lab environment, using Terraform, Ansible, Kubernetes, GitOps, Vault, and supporting platform components.
-
-This is a practical lab environment, not a production-ready platform.
-
-## Stack
-
-```text
-Proxmox
-Terraform
-Ansible
-k3s
-Argo CD
-Vault
-External Secrets Operator
-MetalLB
-Traefik
-cert-manager
-Longhorn
-CloudNativePG
-kube-prometheus-stack
-Grafana
-Renovate
-Reloader
-```
-
-## Repository Layout
-
-```text
-proxmox-iac-k3s-lab/
-├── terraform/        # Proxmox infrastructure
-├── ansible/          # Server and cluster bootstrap
-├── _kubernetes/      # GitOps layer managed by Argo CD
-├── renovate.json     # Renovate configuration
-├── LICENSE
-└── README.md
-```
+**This is a learning and portfolio lab, not a production-ready platform.**
 
 ## Architecture
 
-```mermaid
-flowchart TD
-    A[Terraform] --> B[Proxmox VMs]
-    A --> C[Vault LXC]
-    B --> D[Ansible]
-    C --> D
-    D --> E[k3s Cluster]
-    E --> F[Argo CD]
-    F --> G[GitOps Platform]
-    G --> H[Ingress, TLS, Storage, Monitoring, Secrets, Databases]
-```
+| Layer | Technology | Responsibility |
+| --- | --- | --- |
+| Virtualization | Proxmox VE | Runs the lab hosts |
+| Infrastructure | Terraform | Provisions k3s VMs and the Vault LXC |
+| Bootstrap | Ansible | Configures hosts, installs k3s, Traefik, initial Argo CD and Vault |
+| Container orchestration | k3s | Kubernetes cluster |
+| GitOps | Argo CD | Reconciles platform applications from Git |
+| Secrets | Vault + External Secrets Operator | Synchronizes application secrets using Kubernetes authentication |
+| Maintenance | Ansible + Renovate | Host/k3s updates and Helm dependency updates |
+| Recovery | Ansible | Local backup and restore of k3s and Vault |
 
-## Design Notes
+The project uses **two separate Vault instances**: a development-machine Vault for Terraform's Proxmox API token and a dedicated Proxmox Vault LXC for Kubernetes application secrets.
 
-Terraform is responsible for provisioning the Proxmox infrastructure.
-
-Terraform reads the Proxmox API token from a local development Vault instance.
-
-Ansible is responsible for the initial server and cluster bootstrap.
-
-Argo CD manages the Kubernetes platform from Git after the bootstrap phase.
-
-A separate Vault instance runs outside the Kubernetes cluster as a Proxmox LXC container, so Kubernetes application secrets are not tied to the cluster lifecycle.
-
-External Secrets Operator syncs selected Vault secrets from the Vault LXC into Kubernetes.
-
-Traefik is installed during bootstrap and provides ingress for internal services.
-
-Renovate runs inside the cluster as a CronJob and opens controlled pull requests for Helm chart updates.
-
-## Deployment Flow
-
-### 1. Prepare Proxmox API Access
-
-Terraform requires a Proxmox API token before infrastructure can be created.
-
-The Proxmox token is stored in a local development Vault instance and is read by Terraform during `plan` and `apply`.
-
-The expected local Vault path is:
+## Repository
 
 ```text
-secret/proxmox/proxmox
+terraform/          # Proxmox VMs and Vault LXC (separate Terraform states)
+ansible/            # Central bootstrap, roles, maintenance, backup/restore
+_kubernetes/        # Argo CD root app, applications and platform manifests
+renovate.json       # Helm/Argo CD dependency update policy
 ```
 
-Expected keys:
+## GitOps-managed components
 
-```text
-proxmox_api_url
-proxmox_token_id
-proxmox_token_secret
-```
+Argo CD, cert-manager, External Secrets, MetalLB, Longhorn, CloudNativePG, kube-prometheus-stack/Grafana, Homarr, pgAdmin, Renovate and Reloader. Traefik is bootstrapped with Ansible.
 
-The Proxmox API user used by this lab is:
+## What has been tested
 
-```text
-terraform@pam
-```
+- Terraform **destroy and clean apply** for k3s controller VM **201**, worker VM **202**, and Vault LXC **210** (19 October 2026).
+- Ansible `site.yaml` bootstrapped a fresh k3s cluster and platform services. Initial SSH readiness required retrying after the new machines finished starting.
+- Local `kubectl` works through `~/.kube/config`; both nodes reached `Ready`.
+- Vault was initialized and unsealed; Kubernetes auth and three initial application secrets were configured. All three ExternalSecrets reached `SecretSynced / Ready=True`.
+- All **19 Argo CD Applications** reached `Synced / Healthy` after GitOps synchronization.
+- A separate, earlier **local backup/restore test** recovered the k3s SQLite datastore/server token and Vault data. **PVC data is not covered.**
 
-The user has the custom `TerraformProv` role assigned at the Datacenter root path `/` with propagation enabled.
+**Important:** The successful fresh-install exercise included **manual steps** (Vault initialization, unseal, KV v2, policy, initial secrets, and Argo CD synchronization). Automated sync for the root and Argo CD Applications was added to the manifests *after* that test; a fully unattended end-to-end fresh install has **not** been demonstrated.
 
-Detailed setup notes are documented in the [Terraform Layer](terraform/_docs/README.md).
+## Getting started
 
-### 2. Provision Infrastructure
+Follow the [complete installation guide](INSTALLATION.md), including prerequisites, commands, manual bootstrap steps, troubleshooting, and final verification.
 
-Terraform is split into separate states:
+For deeper reference:
 
-```text
-terraform/vms        # k3s virtual machines
-terraform/vault-lxc  # Vault LXC container
-```
+- [Terraform layer](terraform/_docs/README.md)
+- [Ansible layer](ansible/_docs/README.md)
+- [Kubernetes / GitOps layer](_kubernetes/_docs/README.md)
 
-Provision the k3s virtual machines:
+## Scope and limitations
 
-```sh
-cd terraform/vms
-terraform init
-terraform plan
-terraform apply
-```
-
-Provision the Vault LXC:
-
-```sh
-cd ../vault-lxc
-terraform init
-terraform plan
-terraform apply
-```
-
-### 3. Bootstrap The Cluster
-
-Ansible is used to configure the servers and install k3s.
-
-```sh
-cd ../../ansible
-ansible-playbook playbooks/common.yaml
-ansible-playbook playbooks/k3s_controller.yaml
-ansible-playbook playbooks/k3s_worker.yaml
-```
-
-### 4. Install Bootstrap Platform Components
-
-Ansible installs the initial platform components required before GitOps can fully manage the cluster.
-
-```sh
-ansible-playbook playbooks/traefik.yaml
-ansible-playbook playbooks/argocd.yaml
-ansible-playbook playbooks/vault.yaml --skip-tags vault-kubernetes-auth
-```
-
-Additional bootstrap playbooks are available for rebuild scenarios:
-
-```sh
-ansible-playbook playbooks/cert_manager.yaml
-ansible-playbook playbooks/metallb.yaml
-```
-
-After Argo CD takes over, ongoing Kubernetes platform changes should be made through the `_kubernetes` directory.
-
-### 5. Enable GitOps Management
-
-After Argo CD is installed, apply the root application:
-
-```sh
-cd ..
-kubectl apply -f _kubernetes/bootstrap/root-app.yaml
-```
-
-From this point, Argo CD tracks and reconciles the Kubernetes platform configuration from Git.
-
-### 6. Configure Vault Authentication for External Secrets
-
-The first-time Vault setup is **not fully automated**. Once the Vault LXC has been installed, an operator must initialize and unseal Vault, store its initialization credentials safely, enable the `secret` KV v2 engine, and create the application secrets and the `eso-read` policy. This lab uses a local, disk-based unseal-key helper, which is not a production-grade auto-unseal solution.
-
-The `eso-read` policy grants read access to `secret/data/apps/*` and list/read access to `secret/metadata/apps/*`. Keep actual secrets, administrator tokens and unseal keys outside Git.
-
-Before running Vault Kubernetes authentication configuration, wait until Argo CD has deployed the `vault-auth` ServiceAccount and its TokenReview ClusterRoleBinding from `_kubernetes/platform/external-secrets/vault-auth.yaml`.
-
-From the `ansible/` directory on the control machine, enter the **Vault LXC administrator token** when prompted (input is hidden):
-
-```sh
-read -s VAULT_TOKEN && export VAULT_TOKEN
-ansible-playbook playbooks/vault.yaml --tags vault-kubernetes-auth
-unset VAULT_TOKEN
-```
-
-Ansible enables and configures the Vault Kubernetes auth backend and binds the `vault-auth` ServiceAccount to the `eso-read` policy. External Secrets then requests short-lived Vault tokens through Kubernetes authentication as needed; no static Vault token needs to be created or renewed manually in Kubernetes.
-
-Check the result:
-
-```sh
-kubectl get clustersecretstore vault-k3s
-kubectl get externalsecrets -A
-kubectl get applications -n argocd
-```
-
-Expected results include `Valid` / `Ready=True` for `vault-k3s` and `SecretSynced` / `Ready=True` for the ExternalSecrets. See the [Ansible Layer](ansible/_docs/README.md) for the full prerequisites and setup.
-
-## Backup and Disaster Recovery
-
-Ansible backs up and restores the k3s SQLite datastore and server token, as well as the external Vault LXC data and unseal key. Vault backups are encrypted using Ansible Vault.
-
-A restore was successfully tested on the existing lab infrastructure: both Kubernetes nodes returned to `Ready`, all 19 Argo CD applications were `Synced / Healthy`, and all three ExternalSecrets reported `SecretSynced / Ready=True` at the time of verification.
-
-This backup does not include application PVC data. A full rebuild of the Proxmox infrastructure from scratch has not been tested.
-
-See the [Ansible Layer](ansible/_docs/README.md) for backup and restore commands and limitations.
-
-Before the k3s update, Proxmox snapshots named `before-updates-2026-10-05` were created for both k3s VMs. Before the restore test, snapshots named `pre-restore` were created for the controller (VM 201), worker (VM 202), and Vault LXC (CT 210). These are additional recovery points, not a substitute for the Ansible backups.
-
-## GitOps Platform
-
-The `_kubernetes` directory manages the Kubernetes platform through Argo CD.
-
-Current platform components include:
-
-```text
-Argo CD
-MetalLB
-cert-manager
-External Secrets Operator
-Longhorn
-CloudNativePG
-kube-prometheus-stack
-Grafana
-Homarr
-pgAdmin
-Renovate
-Reloader
-```
-
-CloudNativePG is currently installed as a database operator foundation for future workloads.
-
-## Secrets
-
-Secrets are not stored in Git.
-
-This project uses two Vault instances:
-
-| Vault instance          | Purpose                                                                 |
-| ----------------------- | ----------------------------------------------------------------------- |
-| Local development Vault | Stores the Proxmox API token used by Terraform                          |
-| Vault LXC               | Stores Kubernetes application secrets used by External Secrets Operator |
-
-Terraform uses the local development Vault only for reading Proxmox API credentials.
-
-Kubernetes uses the Vault LXC together with External Secrets Operator.
-
-External Secrets uses the `ClusterSecretStore` defined under:
-
-```text
-_kubernetes/platform/external-secrets/cluster-secret-store.yaml
-```
-
-External Secrets uses Vault Kubernetes authentication rather than a manually provisioned `vault-token` Secret. Argo CD deploys the `vault-auth` ServiceAccount and the `ClusterSecretStore`; Ansible configures the corresponding authentication backend and `eso-read` policy binding in the Vault LXC.
-
-Vault initialization and initial secret provisioning are still manual bootstrap steps. Routine External Secrets authentication and token renewal no longer require manual intervention.
-
-Detailed Vault paths and required Kubernetes secret keys are documented in the [Kubernetes / GitOps Layer](./_kubernetes/_docs/README.md).
-
-Terraform-related Vault usage is documented in the [Terraform Layer](terraform/_docs/README.md).
-
-## Renovate
-
-Renovate runs inside the cluster as a CronJob managed by Argo CD.
-
-It checks Helm chart versions from the Argo CD Application manifests and opens pull requests for updates.
-
-The repository-level Renovate configuration is stored in:
-
-```text
-renovate.json
-```
-
-The configuration is intentionally conservative so dependency updates can be reviewed and applied gradually.
-
-## Documentation
-
-Project-specific documentation is available for each layer:
-
-1. [Terraform Layer](terraform/_docs/README.md)
-   Project-specific notes for the Terraform infrastructure layer.
-
-2. [Ansible Layer](ansible/_docs/README.md)
-   Project-specific notes for the Ansible bootstrap layer.
-
-3. [Kubernetes / GitOps Layer](./_kubernetes/_docs/README.md)
-   Project-specific notes for the Kubernetes and GitOps layer.
-
-## Project Scope
-
-This project focuses on building a small production-like Kubernetes lab on top of Proxmox.
-
-The repository covers the full infrastructure flow: provisioning virtual machines, bootstrapping a k3s cluster, installing core platform components, managing Kubernetes resources with GitOps, handling secrets with Vault, and testing a controlled dependency update workflow with Renovate.
-
-The exact platform components may change over time as the lab evolves.
-
-## Contributions
-
-This is a personal lab project.
-
-Pull requests from external contributors are not expected to be reviewed or merged.
-
-The repository is public for learning, documentation, and portfolio purposes.
+This lab demonstrates reproducible infrastructure and platform setup, not data preservation across rebuilds. The clean rebuild discarded old application data. Vault's lab unseal helper is not a production-grade seal solution; never commit tokens, unseal keys, kubeconfigs, Terraform state or real application secrets. Local backup/restore does not include PVC data, and GCP backup is planned but not implemented.
 
 ## License
 
-This project is licensed under the MIT License. See [LICENSE](LICENSE).
+MIT — see [LICENSE](LICENSE).

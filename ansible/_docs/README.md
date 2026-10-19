@@ -67,31 +67,31 @@ For a planned fresh installation, after verifying backups and the target environ
 ansible-playbook site.yaml -e confirm_install=true
 ```
 
-Do **not** run this command against the existing lab simply to verify the playbook: bootstrap Helm tasks and the root application can modify cluster resources. A full fresh installation has **not yet been tested**.
+Do **not** run this command against an existing lab merely to test it: bootstrap tasks can modify live resources. A fresh infrastructure rebuild was completed on **19 October 2026** with manual Vault initialization, application secret provisioning, and GitOps sync. Follow the step-by-step [installation guide](../../INSTALLATION.md).
 
 ### Local kubeconfig
 
-The `kubeconfig` role reads `/etc/rancher/k3s/k3s.yaml` from the controller, replaces its localhost API server address with the controller's inventory address, and writes a separate local file:
-
-```text
-~/.kube/proxmox-iac-k3s.yaml
-```
-
-This file has permission mode `0600` and does not overwrite the default `~/.kube/config`. The Traefik and Argo CD bootstrap playbooks use this kubeconfig, and the root application bootstrap sets `KUBECONFIG` to this path.
-
-To use it manually:
+The `kubeconfig` role reads `/etc/rancher/k3s/k3s.yaml` from the controller, replaces the loopback API endpoint with the controller's inventory address, and merges a named `proxmox-iac-k3s` cluster, user and context into the standard `~/.kube/config` on the control machine. It selects this context, keeps differently named entries, saves mode `0600`, and makes a backup when content changes. The configuration can be used directly:
 
 ```bash
-KUBECONFIG="$HOME/.kube/proxmox-iac-k3s.yaml" kubectl get nodes
+kubectl get nodes
 ```
 
-The kubeconfig contains cluster credentials: keep it outside the repository and do not commit it to Git.
+On a rebuild, the earlier kubeconfig may produce `x509: certificate signed by unknown authority` until new cluster credentials are merged. Run only the kubeconfig role from `ansible/` if needed:
+
+```bash
+ansible-playbook site.yaml --tags kubeconfig -e confirm_install=true
+```
+
+This merge does **not** delete older entries with a different name (such as `default`), even if they belong to the previously destroyed cluster. Preserve unrelated contexts deliberately. The kubeconfig contains credentials; never commit it.
+
+The bootstrap playbooks and root-app bootstrap now use `~/.kube/config`.
 
 ### Bootstrap limitations
 
 - The `site.yaml` flow includes Vault service installation but **does not automate Vault initialization**, initial unseal, secret creation, or creation of the `eso-read` policy.
 - Vault Kubernetes authentication is excluded from ordinary Vault installation and must be configured separately **after** the required Vault and Argo CD resources exist.
-- Argo CD's bootstrap Helm logic checks for an existing Helm release and skips installation when one is found. This does not prove a clean installation will succeed or prevent every ownership conflict involving existing resources.
+- Argo CD bootstrap checks for an existing Helm release and skips reinstallation. GitOps later reconciles the Argo CD Application itself; automatic sync was added after the recorded rebuild and has not been revalidated in another fresh rebuild.
 - Once Argo CD has taken ownership of platform resources, normal updates belong in `_kubernetes/`, not the original bootstrap playbooks.
 
 ## Validation Performed (18 October 2026)
@@ -105,7 +105,7 @@ The following checks were completed on the existing lab:
 
 Proxmox snapshots named `pre-site-test` were created for controller VM 201, worker VM 202 and Vault CT 210 before the planned rebuild exercise. Thin-pool capacity warnings were reported during snapshot creation. Snapshots are recovery points, not substitutes for independent backups, and may not provide application-consistent recovery.
 
-**Next planned test:** a controlled rebuild of the environment from scratch, with a separately verified recovery path. This test has not been executed yet.
+**19 October 2026:** Terraform destroyed and recreated VMs `201`, `202` and Vault LXC `210`; `site.yaml` completed after initial SSH readiness retries. Vault was initialized and configured manually, GitOps was explicitly synced, both nodes became `Ready`, all 19 Argo CD Applications reached `Synced / Healthy`, and three ExternalSecrets reported `SecretSynced / True`. This was a clean rebuild, **not** a restoration of prior application data or PVCs. Full steps and errors: [INSTALLATION.md](../../INSTALLATION.md).
 
 ## Vault Kubernetes Authentication
 
@@ -146,11 +146,10 @@ The lab's disk-based unseal helper in `roles/vault/` is a convenience for a loca
 
 ### Configure through Ansible
 
-Run from `ansible/` on the Mac, using a **Vault LXC administrator token**, not the token from the separate local development Vault. Set `KUBECONFIG` so the local `kubectl` lookup uses the generated file:
+Run from `ansible/` on the control machine, using a **Vault LXC administrator token**, not the token from the separate local development Vault. The kubeconfig role sets the current context in `~/.kube/config`:
 
 ```bash
 read -s VAULT_TOKEN && export VAULT_TOKEN
-export KUBECONFIG="$HOME/.kube/proxmox-iac-k3s.yaml"
 ansible-playbook playbooks/vault.yaml --tags vault-kubernetes-auth
 unset VAULT_TOKEN
 ```
@@ -212,7 +211,7 @@ kubectl get externalsecrets -A
 
 A real restore was successfully executed on the existing lab: both nodes returned to `Ready`, all 19 Argo CD applications reported `Synced / Healthy`, and all three ExternalSecrets reported `SecretSynced / Ready=True` when checked. The ExternalSecrets last-sync timestamps were not refreshed during that check.
 
-**Scope:** k3s datastore and external Vault only. PVC data recovery and a full infrastructure rebuild from scratch were not tested.
+**Scope:** k3s datastore and external Vault only; PVC data recovery has not been tested. A **separate clean infrastructure rebuild** was successfully performed on 19 October 2026, without restoring the prior application data.
 
 ## Legacy Bootstrap Playbooks
 

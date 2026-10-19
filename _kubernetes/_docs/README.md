@@ -20,6 +20,8 @@ After Ansible has installed Argo CD and the local kubeconfig is active:
 kubectl apply -f _kubernetes/bootstrap/root-app.yaml
 ```
 
+The `root-app` manifest now enables automated sync and self-healing. On the **19 October 2026** rebuild, before this code change, simply applying the root app left it `OutOfSync / Missing` and a hard refresh was insufficient; a manual sync was required. The Argo CD child Application was likewise explicitly synced after its initial Helm bootstrap. See [INSTALLATION.md](../../INSTALLATION.md) for the recorded commands and fallback. The new automatic sync behavior has **not** yet been proven in a second fresh rebuild.
+
 Argo CD then discovers and reconciles everything under `applications/`.
 
 ## MetalLB
@@ -42,7 +44,7 @@ It runs weekly and opens pull requests for Helm chart updates found in:
 _kubernetes/applications/**/app.yaml
 ```
 
-The GitHub token is stored in Vault and synced to Kubernetes with External Secrets.
+The GitHub fine-grained personal access token is stored in Vault (`secret/apps/renovate`, key `RENOVATE_TOKEN`) and synced to Kubernetes with External Secrets. Restrict repository access to this repository. The permissions selected during the rebuild were: Commit statuses (read/write), Contents (read/write), Dependabot alerts (read), Issues (read/write), Metadata (read), Pull requests (read/write), Workflows (read/write). A token without expiration was selected for this lab; a finite expiry and rotation are safer in general.
 
 ## Secrets
 
@@ -77,6 +79,10 @@ Example Vault paths and keys currently used by External Secrets:
 | `secret/data/apps/homarr`   | `db-encryption-key` | `db-encryption`   | Homarr database encryption key |
 | `secret/data/apps/pgadmin`  | `password`          | `pgadmin-secret`  | pgAdmin admin password         |
 | `secret/data/apps/renovate` | `RENOVATE_TOKEN`    | `renovate-secret` | Renovate GitHub token          |
+
+Initial values are created **manually** in the cluster Vault. Generate the Homarr encryption key with `openssl rand -hex 32`; store it as `db-encryption-key`, and provision the pgAdmin password and Renovate GitHub token using the exact key names above. Avoid typing secrets on the shell command line or sharing them in logs.
+
+On the rebuild, the Vault `ClusterSecretStore` was `Valid / Ready=True` before three ExternalSecrets recovered from `SecretSyncedError`. Once the Vault secrets existed, a one-time `force-sync` annotation caused all three to report `SecretSynced / True`. See [INSTALLATION.md](../../INSTALLATION.md).
 
 Only the ExternalSecret manifests are stored in Git.
 
