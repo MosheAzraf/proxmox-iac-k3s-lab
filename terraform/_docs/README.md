@@ -4,14 +4,15 @@ Project-specific notes for the Terraform infrastructure layer of `proxmox-iac-k3
 
 Terraform provisions the Proxmox infrastructure consumed by the rest of the project.
 
-The Terraform layer is split into two separate roots:
+The Terraform layer is split into three separate roots:
 
 ```text
 terraform/vms
 terraform/vault-lxc
+terraform/gcp
 ```
 
-This keeps the k3s virtual machines and the Vault LXC container in separate Terraform states.
+This keeps the k3s virtual machines, Vault LXC container, and Google Cloud resources in separate Terraform states.
 
 ## Source Of Truth
 
@@ -34,6 +35,16 @@ Main files:
 providers.tf
 variables.tf
 vault_lxc.tf
+```
+
+`terraform/gcp` manages Google Cloud resources for the homelab integration.
+
+Main files:
+
+```text
+provider.tf
+main.tf
+.terraform.lock.hcl
 ```
 
 Read the Terraform files for the current resource configuration.
@@ -78,6 +89,44 @@ Common LXC settings:
 | OS                     | Ubuntu 24.04 |
 | Unprivileged container | Enabled      |
 
+### Google Cloud (GCP)
+
+The GCP project was created manually in the Google Cloud Console. Terraform manages resources inside that project, independently from the Proxmox Terraform roots.
+
+| Setting         | Value                  |
+| --------------- | ---------------------- |
+| Project ID      | `proxmox-iac-k3s-lab`  |
+| Organization    | `mosheaz-dev-org`      |
+| Default region  | `me-west1`             |
+| Authentication  | Local Google Cloud ADC |
+| Terraform state | Local, excluded from Git |
+
+`provider.tf` configures `hashicorp/google` (`~> 7.0`) and the project/region. The initial setup installed Google Provider `7.46.2`.
+
+`main.tf` currently enables these project APIs using `google_project_service`:
+
+| API | Purpose |
+| --- | ------- |
+| `iam.googleapis.com` | Identity and Access Management API |
+| `storage.googleapis.com` | Cloud Storage API |
+
+The resources use `disable_on_destroy = false` so that Terraform does not disable those APIs when the corresponding resources are removed from state or destroyed.
+
+**Verified on 26 October 2026:** `terraform init`, `terraform validate`, and `terraform apply` succeeded; the apply enabled both APIs (`2 added, 0 changed, 0 destroyed`). A subsequent `terraform plan` reported **No changes**.
+
+**Scope of IAM work:** The IAM API is enabled, but Terraform-managed Service Accounts, IAM role bindings, and least-privilege access have **not** been configured yet.
+
+#### GCP security and cost controls
+
+- The GCP project was created manually under the organization and linked to the existing billing account.
+- The legacy organization policy `iam.disableServiceAccountKeyCreation` appeared **Active** in the Console. The managed successor policy appeared **Inactive**; no policy modifications were made during this session.
+- Local Terraform authentication uses Application Default Credentials (ADC), without Service Account key files.
+- A project-scoped monthly **₪30 budget with email alerts** was set up (50%, 90%, 100%). This budget **does not stop charges automatically**.
+- GitGuardian's GitHub integration was enabled on the main repository. The initial historical scan showed no detected incidents, and automatic monitoring was enabled. This is an additional secret-detection control, not a replacement for proper secrets management.
+- The GCP Terraform root uses local state. State files and variable files containing secrets are ignored by the repository `.gitignore`; `.terraform.lock.hcl` remains version-controlled.
+
+Cloud Storage buckets, backup integration, Service Accounts, and IAM permissions are planned for later sessions; they have not been provisioned by this Terraform root yet.
+
 ## Prerequisites
 
 Before running Terraform, the following must be available:
@@ -91,6 +140,19 @@ SSH public key for the provisioned machines
 Terraform reads the Proxmox API token from a local development Vault instance.
 
 The Proxmox token is not stored in Git.
+
+For the GCP Terraform root, the GCP project must already exist, billing must be configured, and Google Cloud CLI authentication and ADC must be available locally.
+
+Authenticate and select the project:
+
+```bash
+gcloud auth login
+gcloud config set project proxmox-iac-k3s-lab
+gcloud auth application-default login
+gcloud auth application-default set-quota-project proxmox-iac-k3s-lab
+```
+
+`gcloud auth application-default login` is only needed if ADC credentials are not already present. Do not commit the local ADC credentials file.
 
 ## Vault Instances
 
@@ -239,6 +301,16 @@ terraform -chdir=terraform/vault-lxc fmt -check
 terraform -chdir=terraform/vault-lxc validate
 terraform -chdir=terraform/vault-lxc plan
 terraform -chdir=terraform/vault-lxc apply
+```
+
+For Google Cloud:
+
+```bash
+terraform -chdir=terraform/gcp init
+terraform -chdir=terraform/gcp fmt -check
+terraform -chdir=terraform/gcp validate
+terraform -chdir=terraform/gcp plan
+terraform -chdir=terraform/gcp apply
 ```
 
 Review every plan before applying it.

@@ -1,6 +1,6 @@
 # Proxmox IaC K3s Lab
 
-A hands-on Infrastructure as Code homelab built on Proxmox. It demonstrates the full lifecycle of a small Kubernetes environment: provisioning, bootstrapping, GitOps reconciliation, secrets management, updates, and local disaster recovery.
+A hands-on Infrastructure as Code homelab built on Proxmox. It demonstrates the full lifecycle of a small Kubernetes environment: provisioning, bootstrapping, GitOps reconciliation, secrets management, updates, and local disaster recovery. The project also includes an initial Google Cloud integration managed with Terraform.
 
 **This is a learning and portfolio lab, not a production-ready platform.**
 
@@ -9,11 +9,12 @@ A hands-on Infrastructure as Code homelab built on Proxmox. It demonstrates the 
 | Layer | Technology | Responsibility |
 | --- | --- | --- |
 | Virtualization | Proxmox VE | Runs the lab hosts |
-| Infrastructure | Terraform | Provisions k3s VMs and the Vault LXC |
+| Infrastructure | Terraform | Provisions k3s VMs and the Vault LXC; manages initial GCP project services |
 | Bootstrap | Ansible | Configures hosts, installs k3s, Traefik, initial Argo CD and Vault |
 | Container orchestration | k3s | Kubernetes cluster |
 | GitOps | Argo CD | Reconciles platform applications from Git |
 | Secrets | Vault + External Secrets Operator | Synchronizes application secrets using Kubernetes authentication |
+| Secret scanning | GitGuardian | Monitors the GitHub repository for exposed secrets |
 | Maintenance | Ansible + Renovate | Host/k3s updates and Helm dependency updates |
 | Recovery | Ansible | Local backup and restore of k3s and Vault |
 
@@ -22,7 +23,7 @@ The project uses **two separate Vault instances**: a development-machine Vault f
 ## Repository
 
 ```text
-terraform/          # Proxmox VMs and Vault LXC (separate Terraform states)
+terraform/          # Proxmox VMs, Vault LXC and GCP (separate Terraform states)
 ansible/            # Central bootstrap, roles, maintenance, backup/restore
 _kubernetes/        # Argo CD root app, applications and platform manifests
 renovate.json       # Helm/Argo CD dependency update policy
@@ -40,6 +41,8 @@ Argo CD, cert-manager, External Secrets, MetalLB, Longhorn, CloudNativePG, kube-
 - Vault was initialized and unsealed; Kubernetes auth and three initial application secrets were configured. All three ExternalSecrets reached `SecretSynced / Ready=True`.
 - All **19 Argo CD Applications** reached `Synced / Healthy` after GitOps synchronization.
 - A separate, earlier **local backup/restore test** recovered the k3s SQLite datastore/server token and Vault data. **PVC data is not covered.**
+- Terraform enabled the GCP IAM API (`iam.googleapis.com`) and Cloud Storage API (`storage.googleapis.com`) in the manually created `proxmox-iac-k3s-lab` project. A subsequent `terraform plan` returned **No changes** (26 October 2026).
+- GitGuardian's GitHub integration completed its initial historical scan with no detected secret incidents and has automatic monitoring enabled.
 
 **Important:** The successful fresh-install exercise included **manual steps** (Vault initialization, unseal, KV v2, policy, initial secrets, and Argo CD synchronization). Automated sync for the root and Argo CD Applications was added to the manifests *after* that test; a fully unattended end-to-end fresh install has **not** been demonstrated.
 
@@ -55,7 +58,7 @@ For deeper reference:
 
 ## Scope and limitations
 
-This lab demonstrates reproducible infrastructure and platform setup, not data preservation across rebuilds. The clean rebuild discarded old application data. Vault's lab unseal helper is not a production-grade seal solution; never commit tokens, unseal keys, kubeconfigs, Terraform state or real application secrets. Local backup/restore does not include PVC data, and GCP backup is planned but not implemented.
+This lab demonstrates reproducible infrastructure and platform setup, not data preservation across rebuilds. The clean rebuild discarded old application data. Vault's lab unseal helper is not a production-grade seal solution; never commit tokens, unseal keys, kubeconfigs, Terraform state or real application secrets. Local backup/restore does not include PVC data, and GCP backup is planned but not implemented. The GCP IAM API is enabled, but dedicated Service Accounts and IAM permissions have not yet been configured.
 
 ## License
 
