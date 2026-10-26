@@ -26,8 +26,6 @@ The following components were deliberately removed:
 
 Homarr remains as a useful dashboard for interested users (currently installed by default via Argo CD; optional deployment is not yet implemented). Its encryption key is delivered from Vault through External Secrets.
 
-Reloader remains available to restart annotated workloads when relevant Secrets change; installing it alone does not enable restarts for every workload.
-
 ## Bootstrap
 
 After Ansible has installed Argo CD and the local kubeconfig is active:

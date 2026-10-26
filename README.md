@@ -16,7 +16,6 @@ A hands-on Infrastructure as Code homelab built on Proxmox. It demonstrates the 
 | Secrets | Vault + External Secrets Operator | Synchronizes application secrets using Kubernetes authentication |
 | Secret scanning | GitGuardian | Monitors the GitHub repository for exposed secrets |
 | Maintenance | Ansible + Renovate | Host/k3s updates and Helm dependency updates |
-| Secret rollout | Reloader | Supports workload restarts when relevant Secrets change, if configured on the workload |
 | Observability | Prometheus + Grafana | Monitors cluster infrastructure |
 | Recovery | Ansible | Local backup and restore of k3s and Vault |
 
@@ -33,7 +32,7 @@ renovate.json       # Helm/Argo CD dependency update policy
 
 ## GitOps-managed components
 
-Argo CD, cert-manager, External Secrets, MetalLB, kube-prometheus-stack/Grafana, Homarr, Renovate and Reloader. Traefik is bootstrapped with Ansible.
+Argo CD, cert-manager, External Secrets, MetalLB, kube-prometheus-stack/Grafana, Homarr and Renovate. Traefik is bootstrapped with Ansible.
 
 Homarr provides a simple dashboard for users who want one. Its current manifest is included in the standard Argo CD deployment; making it optional at deployment time is a possible future refinement.
 
@@ -51,7 +50,7 @@ The project previously included Longhorn, CloudNativePG, and pgAdmin. These comp
 
 **Reducing unused services is an engineering decision, not a reduction in the project's technical scope.** It demonstrates the ability to evaluate dependencies, remove unjustified infrastructure, and prioritize a system that is easier to understand, rebuild, validate, and maintain.
 
-Vault and External Secrets remain because they have real consumers, including Renovate's GitHub token and Homarr's encryption key. Reloader remains to support Secret-triggered workload restarts where explicitly configured. Homarr is retained as a convenient dashboard, without making dashboards the purpose of the lab.
+Vault and External Secrets remain because they have real consumers, including Renovate's GitHub token and Homarr's encryption key. Homarr is retained as a convenient dashboard, without making dashboards the purpose of the lab.
 
 This is a **source-code cleanup**. It does not by itself verify or remove resources on a running cluster. The cluster was not running during the initial review.
 
