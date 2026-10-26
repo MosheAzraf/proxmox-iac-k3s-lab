@@ -2,7 +2,7 @@
 
 Project-specific notes for the Kubernetes and GitOps layer of `proxmox-iac-k3s-lab`.
 
-This directory is the GitOps source for the cluster. Ansible performs the initial bootstrap; Argo CD manages the resources declared here afterward.
+This directory is the GitOps source for an **infrastructure experimentation lab**, not an application hosting platform. Ansible performs the initial bootstrap; Argo CD manages the resources declared here afterward.
 
 ## Layout
 
@@ -11,6 +11,22 @@ This directory is the GitOps source for the cluster. Ansible performs the initia
 * `platform/` - Helm values and component manifests.
 
 The manifests themselves are the source of truth for versions, namespaces, repository URLs, and configuration.
+
+## Intentional platform scope
+
+The GitOps layer is designed around operational scenarios: cluster configuration, ingress/TLS, GitOps reconciliation, secrets synchronization, automated dependency updates and monitoring. A smaller, purposeful set of services makes rebuilds easier to reason about, test and maintain.
+
+The following components were deliberately removed:
+
+| Component | Rationale |
+| --- | --- |
+| Longhorn | No workload used its StorageClass; Homarr currently uses `local-path`. Distributed storage adds operational complexity without an active scenario. |
+| CloudNativePG | No application database depended on this operator. |
+| pgAdmin | No PostgreSQL administration workflow remains in scope. |
+
+Homarr remains as a useful dashboard for interested users (currently installed by default via Argo CD; optional deployment is not yet implemented). Its encryption key is delivered from Vault through External Secrets.
+
+Reloader remains available to restart annotated workloads when relevant Secrets change; installing it alone does not enable restarts for every workload.
 
 ## Bootstrap
 
@@ -72,17 +88,16 @@ External Secrets requests short-lived Vault credentials automatically as require
 
 ### Vault Secret Examples
 
-Example Vault paths and keys currently used by External Secrets:
+Vault paths and keys currently used by External Secrets:
 
-| Vault path                  | Key                 | Kubernetes target | Purpose                        |
-| --------------------------- | ------------------- | ----------------- | ------------------------------ |
-| `secret/data/apps/homarr`   | `db-encryption-key` | `db-encryption`   | Homarr database encryption key |
-| `secret/data/apps/pgadmin`  | `password`          | `pgadmin-secret`  | pgAdmin admin password         |
-| `secret/data/apps/renovate` | `RENOVATE_TOKEN`    | `renovate-secret` | Renovate GitHub token          |
+| Vault path | Key | Kubernetes target | Purpose |
+| --- | --- | --- | --- |
+| `secret/data/apps/homarr` | `db-encryption-key` | `db-encryption` | Homarr database encryption key |
+| `secret/data/apps/renovate` | `RENOVATE_TOKEN` | `renovate-secret` | Renovate GitHub token |
 
-Initial values are created **manually** in the cluster Vault. Generate the Homarr encryption key with `openssl rand -hex 32`; store it as `db-encryption-key`, and provision the pgAdmin password and Renovate GitHub token using the exact key names above. Avoid typing secrets on the shell command line or sharing them in logs.
+Initial values are created **manually** in the cluster Vault. Generate the Homarr encryption key with `openssl rand -hex 32`; store it as `db-encryption-key`, and provision the Renovate GitHub token using the exact key names above. Avoid typing secrets on the shell command line or sharing them in logs.
 
-On the rebuild, the Vault `ClusterSecretStore` was `Valid / Ready=True` before three ExternalSecrets recovered from `SecretSyncedError`. Once the Vault secrets existed, a one-time `force-sync` annotation caused all three to report `SecretSynced / True`. See [INSTALLATION.md](../../INSTALLATION.md).
+During the original rebuild, the Vault `ClusterSecretStore` was `Valid / Ready=True` before three ExternalSecrets recovered from `SecretSyncedError`. Once their Vault secrets existed, a one-time `force-sync` annotation caused all three to report `SecretSynced / True`. Following the removal of pgAdmin, the expected set contains **two ExternalSecrets**. That reduced configuration has not yet been tested on a running cluster. See [INSTALLATION.md](../../INSTALLATION.md).
 
 Only the ExternalSecret manifests are stored in Git.
 

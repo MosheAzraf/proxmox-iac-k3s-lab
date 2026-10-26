@@ -107,6 +107,8 @@ Proxmox snapshots named `pre-site-test` were created for controller VM 201, work
 
 **19 October 2026:** Terraform destroyed and recreated VMs `201`, `202` and Vault LXC `210`; `site.yaml` completed after initial SSH readiness retries. Vault was initialized and configured manually, GitOps was explicitly synced, both nodes became `Ready`, all 19 Argo CD Applications reached `Synced / Healthy`, and three ExternalSecrets reported `SecretSynced / True`. This was a clean rebuild, **not** a restoration of prior application data or PVCs. Full steps and errors: [INSTALLATION.md](../../INSTALLATION.md).
 
+**Documentation note (26 October 2026):** The 19-application and three-ExternalSecret results above describe the **original configuration before simplification**. Longhorn, CloudNativePG and pgAdmin have since been removed from the GitOps manifests. The reduced configuration has **not yet been validated** in a new cluster reconciliation or clean rebuild.
+
 ## Vault Kubernetes Authentication
 
 Vault runs outside the k3s cluster in a Proxmox LXC container. External Secrets uses the Kubernetes auth method to authenticate to Vault without a permanent Vault token stored in Kubernetes.

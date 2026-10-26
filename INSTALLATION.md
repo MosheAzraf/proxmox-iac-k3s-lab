@@ -155,19 +155,18 @@ POLICY
 
 The login prompts for the **cluster Vault initial root token**. These commands are for a fresh, uninitialized Vault; enabling an already enabled secrets engine again will fail.
 
-### 6.4 Create the three application secrets
+### 6.4 Create the two application secrets
 
-The three actual Vault KV **CLI paths** and required keys are:
+The two Vault KV **CLI paths** and required keys are:
 
 | Vault CLI path | Key | Used by |
 | --- | --- | --- |
 | `secret/apps/homarr` | `db-encryption-key` | Homarr |
-| `secret/apps/pgadmin` | `password` | pgAdmin |
 | `secret/apps/renovate` | `RENOVATE_TOKEN` | Renovate |
 
 The Vault API paths used by External Secrets are under `secret/data/apps/...` for KV v2; the `vault kv` CLI uses `secret/apps/...`.
 
-Generate a new Homarr encryption key securely with `openssl rand -hex 32`. Choose a pgAdmin administrator password. Create a new GitHub **fine-grained personal access token** for Renovate, scoped to **only** `MosheAzraf/proxmox-iac-k3s-lab` (repository access: *Only select repositories*). During this rebuild, it was created without an expiration date as an explicit operator choice. The permissions used in the session were:
+Generate a new Homarr encryption key securely with `openssl rand -hex 32`. Create a new GitHub **fine-grained personal access token** for Renovate, scoped to **only** `MosheAzraf/proxmox-iac-k3s-lab` (repository access: *Only select repositories*). During the recorded rebuild, it was created without an expiration date as an explicit operator choice. The permissions selected at the time were:
 
 | Repository permission | Access |
 | --- | --- |
@@ -187,16 +186,13 @@ Avoid putting secret values in shell commands or chat. The commands below prompt
 read -rs -p 'Homarr key: ' HOMARR_KEY; echo
 printf '%s' "$HOMARR_KEY" | vault kv put secret/apps/homarr db-encryption-key=-
 unset HOMARR_KEY
-read -rs -p 'pgAdmin password: ' PGADMIN_PASSWORD; echo
-printf '%s' "$PGADMIN_PASSWORD" | vault kv put secret/apps/pgadmin password=-
-unset PGADMIN_PASSWORD
 read -rs -p 'Renovate GitHub token: ' RENOVATE_TOKEN; echo
 printf '%s' "$RENOVATE_TOKEN" | vault kv put secret/apps/renovate RENOVATE_TOKEN=-
 unset RENOVATE_TOKEN
 vault kv list secret/apps/
 ```
 
-**Shell note:** These prompts use Bash (`read -rs -p`), appropriate inside the Vault LXC. In the observed session, `vault kv list` showed `homarr`, `pgadmin`, `renovate`.
+**Shell note:** These prompts use Bash (`read -rs -p`), appropriate inside the Vault LXC. On the original rebuild, the listing also included `pgadmin`, which has since been removed from the current manifests. On a new setup, only `homarr` and `renovate` are expected.
 
 ## 7. Configure Vault Kubernetes authentication
 
@@ -225,13 +221,13 @@ kubectl get clustersecretstore vault-k3s
 kubectl get externalsecrets -A
 ```
 
-Expected: Store `Valid / True` and all three ExternalSecrets `SecretSynced / True`. During the test, the store was already valid while three ExternalSecrets still showed `SecretSyncedError`. After adding their Vault values, a one-time force reconciliation resolved the stale statuses:
+Expected with the revised manifests: Store `Valid / True` and both ExternalSecrets `SecretSynced / True`. During the **19 October rebuild**, three ExternalSecrets were present and initially showed `SecretSyncedError`. After adding their Vault values, a one-time force reconciliation resolved the stale statuses:
 
 ```bash
 kubectl get externalsecrets -A -o json | jq -r '.items[] | [.metadata.namespace, .metadata.name] | @tsv' | while IFS=$'\t' read -r ns name; do kubectl annotate externalsecret "$name" -n "$ns" force-sync="$(date +%s)" --overwrite; done
 ```
 
-This command uses `zsh`/`bash` shell syntax and reconciles **all current** ExternalSecrets; only use if appropriate. The actual test ended with three `SecretSynced / True` results.
+This command uses `zsh`/`bash` shell syntax and reconciles **all current** ExternalSecrets; only use if appropriate. The original test ended with three `SecretSynced / True` results. **The new two-secret layout has not yet been validated on a running cluster.**
 
 ## 9. Final Kubernetes / GitOps verification
 
@@ -242,7 +238,11 @@ kubectl get clustersecretstore vault-k3s
 kubectl get externalsecrets -A
 ```
 
-**Recorded result, 19 October 2026:** both k3s nodes `Ready`, 19/19 Argo CD Applications `Synced / Healthy`, 3/3 ExternalSecrets `SecretSynced / True`, and the ClusterSecretStore `Valid / True`. The Argo CD site `argocd.home.lab` became accessible. For a newly installed Argo CD, the initial account is `admin`; retrieve the bootstrap password privately:
+**Recorded result, 19 October 2026 (before simplification):** both k3s nodes `Ready`, 19/19 Argo CD Applications `Synced / Healthy`, 3/3 ExternalSecrets `SecretSynced / True`, and the ClusterSecretStore `Valid / True`. The Argo CD site `argocd.home.lab` became accessible.
+
+**Current expected configuration:** Longhorn, CloudNativePG and pgAdmin have been removed from GitOps manifests. A fresh reconciliation and complete validation of the reduced set are still pending. Do not present the old 19/19 result as validation of the reduced set.
+
+For a newly installed Argo CD, the initial account is `admin`; retrieve the bootstrap password privately:
 
 ```bash
 kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath='{.data.password}' | base64 --decode; echo
@@ -252,6 +252,7 @@ The initial admin Secret may no longer exist after credentials are changed. Do n
 
 ## 10. Known limits and security reminders
 
+- This is an **infrastructure experimentation lab**, not a production-like application hosting platform. Longhorn, CloudNativePG and pgAdmin were deliberately removed because their ongoing complexity did not support an active infrastructure exercise. Homarr remains as a dashboard; its persistence uses `local-path`.
 - The **rebuild recreates infrastructure and applications, not previous application data**. The earlier tested Ansible backup/restore covers k3s SQLite state, server token and Vault storage/unseal key; **no PVC recovery**. See [Ansible DR documentation](ansible/_docs/README.md).
 - The first rebuild required SSH readiness retries, manual Vault setup and manual Argo CD sync. A later code change adds Argo CD automated sync, but a second unattended fresh rebuild has not been tested.
 - `~/.kube/config` is merged by the Ansible role and backed up on changes. It uses named lab entries; differently named legacy entries remain unless manually removed.
