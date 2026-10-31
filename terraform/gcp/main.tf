@@ -1,6 +1,5 @@
 locals {
   required_apis = toset([
-    "iam.googleapis.com",
     "storage.googleapis.com"
   ])
 }
