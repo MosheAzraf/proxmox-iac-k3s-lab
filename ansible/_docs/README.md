@@ -190,7 +190,7 @@ From `ansible/`:
 ansible-playbook playbooks/gcp_connection.yaml
 ```
 
-The check uses the local `gcloud` login to obtain temporary impersonated credentials. Successful execution confirms read/list access to the bucket, **not** upload or restore functionality. GCS backup transfer and recovery will be implemented and tested separately.
+The check uses the local `gcloud` login to obtain temporary impersonated credentials. Successful execution confirms read/list access to the bucket. Encrypted GCS upload is available separately through `playbooks/gcp_backup.yaml`; download and restore from GCS have not yet been tested.
 
 ## Backup and Disaster Recovery
 
@@ -210,6 +210,38 @@ Backups are saved to `~/k3s-backups/` on the control machine:
 - `vault-backup.tar.gz` — Vault file storage and unseal key, encrypted with Ansible Vault.
 
 Keep `~/.k3s-backup-password` secure and separate from the backups. Do not commit backups, tokens or encryption passwords to Git.
+
+### Backup Encryption Password
+
+Ansible Vault uses `~/.k3s-backup-password` to encrypt Vault backups and k3s backups uploaded to GCS.
+
+For a first-time setup, create the password file only if it does not already exist:
+
+```bash
+test -e ~/.k3s-backup-password || (umask 077; openssl rand -base64 32 > ~/.k3s-backup-password)
+```
+
+Keep a secure copy of this password outside the repository and separately from the backups.
+
+**Never overwrite or delete an existing password file.** Losing it will make the encrypted backups unrecoverable.
+
+### GCP Backup
+
+GCP backup is optional and independent of the existing local backup workflow.
+
+Run from `ansible/`:
+
+```bash
+ansible-playbook playbooks/gcp_backup.yaml
+```
+
+The playbook backs up the k3s datastore and server token, encrypts the archive using Ansible Vault, and uploads it to `gs://proxmox-iac-lab-backups/k3s/` using Service Account Impersonation.
+
+Temporary files are removed after execution. No Service Account JSON keys are required.
+
+**Verified on 1 November 2026:** Backup creation, encryption, upload and GCS object listing succeeded.
+
+Downloading, decrypting and restoring a backup from GCS have not yet been tested.
 
 ### Restore
 
