@@ -1,0 +1,10 @@
+---
+- name: Verify GCP Storage connection
+  ansible.builtin.command:
+    argv:
+      - gcloud
+      - storage
+      - ls
+      - gs://proxmox-iac-lab-backups/
+      - --impersonate-service-account=ansible-backup@proxmox-iac-k3s-lab.iam.gserviceaccount.com
+  changed_when: false
