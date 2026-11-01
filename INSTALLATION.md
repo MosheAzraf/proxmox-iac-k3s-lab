@@ -22,16 +22,19 @@ For development Vault authentication use your existing local login/session, or p
 
 ### Proxmox API and Local Vault Setup
 
-Before the first Terraform run, configure a dedicated Proxmox API identity on the Proxmox host. The exact `TerraformProv` privilege set is documented in the [Terraform Proxmox API setup](terraform/_docs/README.md#proxmox-api-setup).
+Before the first Terraform run, configure a dedicated Proxmox API identity on the Proxmox host. Create the `TerraformProv` role with the required privileges:
 
 ```bash
-# On the Proxmox host, after creating the TerraformProv role:
+pveum role add TerraformProv -privs "Datastore.AllocateSpace Datastore.Audit Pool.Allocate SDN.Use Sys.Audit Sys.Console Sys.Modify VM.Allocate VM.Audit VM.Clone VM.Config.CDROM VM.Config.CPU VM.Config.Cloudinit VM.Config.Disk VM.Config.HWType VM.Config.Memory VM.Config.Network VM.Config.Options VM.GuestAgent.Audit VM.GuestAgent.Unrestricted VM.Migrate VM.PowerMgmt"
+```
+
+```bash
 pveum user add terraform@pam
 pveum aclmod / -user terraform@pam -role TerraformProv
 pveum user token add terraform@pam terraform
 ```
 
-The token ID is `terraform@pam!terraform`. Securely retain the token secret shown at creation; do not commit or paste it into the repository. The role must be created using the documented privileges **before** assigning it.
+The token ID is `terraform@pam!terraform`. Securely retain the token secret shown at creation; do not commit or paste it into the repository. The custom role is assigned at the Proxmox Datacenter root path (`/`) with propagation enabled.
 
 On the development machine, store the API endpoint, token ID and token secret in the **local development Vault** (not the Vault LXC provisioned by this project), at KV v2 path `secret/proxmox/proxmox`. The expected fields are `proxmox_api_url`, `proxmox_token_id` and `proxmox_token_secret`. Follow the [local Vault secret instructions](terraform/_docs/README.md#local-vault-secret) to populate them securely.
 
