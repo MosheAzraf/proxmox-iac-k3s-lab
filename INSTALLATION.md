@@ -20,6 +20,23 @@ export TF_VAR_ssh_public_key="$(cat ~/.ssh/id_ed25519.pub)"
 
 For development Vault authentication use your existing local login/session, or provide `VAULT_TOKEN` securely. The Proxmox API token must be present there **before** Terraform is used. Full API user/role setup is in the Terraform layer documentation.
 
+### Proxmox API and Local Vault Setup
+
+Before the first Terraform run, configure a dedicated Proxmox API identity on the Proxmox host. The exact `TerraformProv` privilege set is documented in the [Terraform Proxmox API setup](terraform/_docs/README.md#proxmox-api-setup).
+
+```bash
+# On the Proxmox host, after creating the TerraformProv role:
+pveum user add terraform@pam
+pveum aclmod / -user terraform@pam -role TerraformProv
+pveum user token add terraform@pam terraform
+```
+
+The token ID is `terraform@pam!terraform`. Securely retain the token secret shown at creation; do not commit or paste it into the repository. The role must be created using the documented privileges **before** assigning it.
+
+On the development machine, store the API endpoint, token ID and token secret in the **local development Vault** (not the Vault LXC provisioned by this project), at KV v2 path `secret/proxmox/proxmox`. The expected fields are `proxmox_api_url`, `proxmox_token_id` and `proxmox_token_secret`. Follow the [local Vault secret instructions](terraform/_docs/README.md#local-vault-secret) to populate them securely.
+
+Terraform reads these values through the Vault provider's ephemeral secret resource. The Proxmox API token is not hardcoded into the Terraform configuration or written to Terraform State by that resource. The development Vault must be accessible and authenticated before running Terraform.
+
 ## 2. Infrastructure: Terraform
 
 Terraform uses two independent roots and states: `terraform/vms` for k3s VMs **201/202** and `terraform/vault-lxc` for Vault LXC **210**. Default networking is `10.0.20.101`, `10.0.20.102`, `10.0.20.110` (see Terraform definitions for current values).
