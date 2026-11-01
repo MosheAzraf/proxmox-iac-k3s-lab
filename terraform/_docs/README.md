@@ -44,6 +44,8 @@ Main files:
 ```text
 provider.tf
 main.tf
+iam.tf
+storage.tf
 .terraform.lock.hcl
 ```
 
@@ -103,18 +105,43 @@ The GCP project was created manually in the Google Cloud Console. Terraform mana
 
 `provider.tf` configures `hashicorp/google` (`~> 7.0`) and the project/region. The initial setup installed Google Provider `7.46.2`.
 
-`main.tf` currently enables these project APIs using `google_project_service`:
+The GCP Terraform root enables three Google Cloud APIs:
 
 | API | Purpose |
-| --- | ------- |
-| `iam.googleapis.com` | Identity and Access Management API |
-| `storage.googleapis.com` | Cloud Storage API |
+| --- | --- |
+| `iam.googleapis.com` | Service Account management |
+| `iamcredentials.googleapis.com` | Temporary credentials for Service Account impersonation |
+| `storage.googleapis.com` | Cloud Storage |
 
-The resources use `disable_on_destroy = false` so that Terraform does not disable those APIs when the corresponding resources are removed from state or destroyed.
+The API resources use `disable_on_destroy = false` so Terraform does not disable the APIs during a teardown.
 
-**Verified on 26 October 2026:** `terraform init`, `terraform validate`, and `terraform apply` succeeded; the apply enabled both APIs (`2 added, 0 changed, 0 destroyed`). A subsequent `terraform plan` reported **No changes**.
+`storage.tf` creates the `proxmox-iac-lab-backups` bucket in `me-west1`, the `k3s/` object prefix, and a lifecycle rule deleting `k3s/*.tar.gz` objects after 30 days. Public access prevention and uniform bucket-level access are enabled; soft delete is disabled.
 
-**Scope of IAM work:** The IAM API is enabled, but Terraform-managed Service Accounts, IAM role bindings, and least-privilege access have **not** been configured yet.
+`iam.tf` provisions the `ansible-backup` Service Account with `roles/storage.objectCreator` and `roles/storage.objectViewer` scoped to that bucket. No Service Account keys are created.
+
+#### Initial GCP access setup
+
+After the first Terraform apply, grant the locally authenticated Google user permission to impersonate the Service Account:
+
+```bash
+gcloud iam service-accounts add-iam-policy-binding \
+  ansible-backup@proxmox-iac-k3s-lab.iam.gserviceaccount.com \
+  --member="user:$(gcloud auth list --filter='status:ACTIVE' --format='value(account)')" \
+  --role="roles/iam.serviceAccountTokenCreator" \
+  --project="proxmox-iac-k3s-lab"
+```
+
+This one-time IAM binding is configured outside Terraform to avoid saving the personal user email in Terraform State. Repeat it if the Service Account is destroyed and recreated. The user's identity is still recorded in the Google Cloud IAM policy.
+
+#### Verify Ansible connectivity
+
+From the `ansible/` directory:
+
+```bash
+ansible-playbook playbooks/gcp_connection.yaml
+```
+
+The local playbook checks bucket access using Service Account impersonation, without JSON keys. Uploading and restoring actual k3s backups will be implemented and tested separately.
 
 #### GCP security and cost controls
 
@@ -125,7 +152,7 @@ The resources use `disable_on_destroy = false` so that Terraform does not disabl
 - GitGuardian's GitHub integration was enabled on the main repository. The initial historical scan showed no detected incidents, and automatic monitoring was enabled. This is an additional secret-detection control, not a replacement for proper secrets management.
 - The GCP Terraform root uses local state. State files and variable files containing secrets are ignored by the repository `.gitignore`; `.terraform.lock.hcl` remains version-controlled.
 
-Cloud Storage buckets, backup integration, Service Accounts, and IAM permissions are planned for later sessions; they have not been provisioned by this Terraform root yet.
+The GCS infrastructure, Service Account permissions and Ansible connection check are configured. Backup upload and restore integration remain future work.
 
 ## Prerequisites
 
