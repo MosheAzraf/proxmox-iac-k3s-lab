@@ -7,7 +7,7 @@ This guide documents the **actual clean rebuild tested on 19 October 2026**, inc
 ## 1. Prerequisites
 
 - Proxmox VE with node `pve`, network bridge `vmbr0`, `local-lvm`, Ubuntu VM template **9000**, and LXC template `local:vztmpl/ubuntu-24.04-standard_24.04-2_amd64.tar.zst` available (see [Terraform configuration](terraform/_docs/README.md)).
-- Development machine with Terraform, Ansible, `kubectl`, Helm, `jq`, `openssl`, and the Ansible `kubernetes.core` collection (`ansible-galaxy collection install kubernetes.core`).
+- Development machine with Terraform, Ansible, `kubectl`, Helm, `jq`, `openssl`, and the Ansible `kubernetes.core` collection (`ansible-galaxy collection install kubernetes.core`). For optional GCP backup, also install and authenticate Google Cloud CLI and prepare the local Ansible Vault encryption password file (`~/.k3s-backup-password`); see [Ansible backup documentation](ansible/_docs/README.md#backup-encryption-password) and [Terraform GCP initial setup](terraform/_docs/README.md#initial-gcp-access-setup).
 - SSH keypair; access to the provisioned hosts and Kubernetes API; Proxmox API access configured as documented in [Terraform layer](terraform/_docs/README.md).
 - A **local development Vault** running on the development machine, storing the Proxmox API credentials at `secret/proxmox/proxmox`. This is **not** the cluster's Vault LXC.
 - On the development machine, supply the local Vault environment and Terraform SSH key variable (adapt the public key file if needed):
@@ -258,6 +258,6 @@ The initial admin Secret may no longer exist after credentials are changed. Do n
 - `~/.kube/config` is merged by the Ansible role and backed up on changes. It uses named lab entries; differently named legacy entries remain unless manually removed.
 - The development Vault's Proxmox API token should never be confused with the newly created Vault LXC root token. Keep all keys/tokens out of terminal transcripts and Git. Rotate any credentials inadvertently exposed in logs or chat; do not embed unseal keys, root tokens or CLI transcripts in Proxmox container descriptions.
 - If using `rsync` to apply a downloaded code update, macOS may copy `.DS_Store` files and `--backup` can create `*.bak` files. Review `git status`, and stage only intended source files.
-- GCP backup integration is a **future milestone**, not a completed feature.
+- GCP backup creation and encrypted upload were verified on **1 November 2026**. Download and restore from GCS remain untested. GCP integration is optional and does not affect the local backup workflow. See [Ansible backup documentation](ansible/_docs/README.md#gcp-backup) and [Terraform GCP setup](terraform/_docs/README.md#initial-gcp-access-setup).
 
 For configuration detail see [Terraform](terraform/_docs/README.md), [Ansible](ansible/_docs/README.md) and [GitOps](_kubernetes/_docs/README.md).
