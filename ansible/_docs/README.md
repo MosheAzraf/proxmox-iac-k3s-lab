@@ -170,6 +170,28 @@ kubectl get externalsecrets -A
 
 The store should report `Valid` / `Ready=True` and the secrets should report `SecretSynced` / `Ready=True`.
 
+## GCP Connection Check
+
+`playbooks/gcp_connection.yaml` runs the `gcp_connection` role on the local control machine. It checks access to the GCS backup bucket using `gcloud storage ls` with **Service Account Impersonation**. This is a read-only connectivity check; it does not upload or restore backups.
+
+### Prerequisites and initial setup
+
+- Apply the GCP Terraform configuration to create the bucket, `ansible-backup` Service Account and bucket-scoped permissions.
+- Install and authenticate the Google Cloud CLI on the Ansible control machine (`gcloud auth login`).
+- On the first setup, grant the authenticated user `roles/iam.serviceAccountTokenCreator` on the `ansible-backup` Service Account. This one-time command and its security rationale are documented in [Terraform's GCP initial setup](../../terraform/_docs/README.md#initial-gcp-access-setup). Repeat after deleting and recreating the Service Account.
+
+No Service Account JSON keys are created or stored. The personal user's impersonation permission is managed outside Terraform to keep that email out of Terraform State; the identity still appears in the Google Cloud IAM policy.
+
+### Run
+
+From `ansible/`:
+
+```bash
+ansible-playbook playbooks/gcp_connection.yaml
+```
+
+The check uses the local `gcloud` login to obtain temporary impersonated credentials. Successful execution confirms read/list access to the bucket, **not** upload or restore functionality. GCS backup transfer and recovery will be implemented and tested separately.
+
 ## Backup and Disaster Recovery
 
 Backups cover the k3s controller's SQLite datastore and server token, plus the external Vault LXC's file storage and unseal key. **Application PVC data is not included.**
