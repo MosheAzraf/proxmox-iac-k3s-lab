@@ -46,6 +46,8 @@ cert_manager_crds_enabled: true
 #vault lxc
 vault_version: "1.21.2-1"
 
+update_vault_version: "1.21.4-1"
+
 # Vault Kubernetes Authentication
 vault_k8s_api: "https://10.0.20.101:6443"
 vault_k8s_auth_role: "external-secrets"

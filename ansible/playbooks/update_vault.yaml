@@ -1,0 +1,8 @@
+
+---
+- name: Update Vault
+  hosts: vault
+  become: true
+
+  roles:
+    - update_vault

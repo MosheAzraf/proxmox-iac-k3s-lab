@@ -1,0 +1,39 @@
+
+---
+- name: Update Vault package
+  ansible.builtin.apt:
+    name: "vault={{ update_vault_version }}"
+    state: present
+    update_cache: true
+  register: vault_update
+
+- name: Restart Vault
+  ansible.builtin.systemd_service:
+    name: vault
+    state: restarted
+  when: vault_update.changed
+
+- name: Unseal Vault
+  ansible.builtin.systemd_service:
+    name: vault-unseal
+    state: restarted
+  when: vault_update.changed
+
+- name: Verify Vault status
+  ansible.builtin.command:
+    argv:
+      - vault
+      - status
+      - -address=http://127.0.0.1:8200
+  register: vault_status
+  retries: 5
+  delay: 3
+  until: vault_status.rc == 0
+  changed_when: false
+
+- name: Verify installed version
+  ansible.builtin.command:
+    argv:
+      - vault
+      - version
+  changed_when: false
