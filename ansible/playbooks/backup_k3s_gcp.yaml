@@ -1,0 +1,7 @@
+---
+- name: Backup k3s to GCP
+  hosts: controllers
+  become: true
+
+  roles:
+    - backup_k3s_gcp
