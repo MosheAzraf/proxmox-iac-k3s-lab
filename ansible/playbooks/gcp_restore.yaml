@@ -1,7 +1,0 @@
----
-- name: Restore k3s from GCP
-  hosts: controllers
-  become: true
-
-  roles:
-    - gcp_restore
