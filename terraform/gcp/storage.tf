@@ -17,7 +17,7 @@ resource "google_storage_bucket" "backups" {
 
     condition {
       age            = 30
-      matches_prefix = ["k3s/"]
+      matches_prefix = ["k3s/", "vault/"]
       matches_suffix = [".tar.gz"]
     }
   }
@@ -31,7 +31,9 @@ resource "google_storage_bucket_object" "k3s" {
   bucket  = google_storage_bucket.backups.name
 }
 
+resource "google_storage_bucket_object" "vault" {
+  name    = "vault/"
+  content = " "
+  bucket  = google_storage_bucket.backups.name
+}
 
-# Optional:
-# Additional subfolders for PVC backups can be added in the future.
-# For now, this project focuses only on k3s backup and restore.
