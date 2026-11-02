@@ -270,6 +270,14 @@ A real restore was successfully executed on the existing lab: both nodes returne
 
 **Scope:** k3s datastore and external Vault only; PVC data recovery has not been tested. A **separate clean infrastructure rebuild** was successfully performed on 19 October 2026, without restoring the prior application data.
 
+### GCP Restore Guardrails
+
+GCS restore playbooks use `confirm_restore=true` and require an explicit backup object path. K3s restores accept only `gs://proxmox-iac-lab-backups/k3s/k3s-backup-<timestamp>.tar.gz`; Vault restores accept only `gs://proxmox-iac-lab-backups/vault/vault-backup-<timestamp>.tar.gz`. Download, Ansible Vault decryption, and archive integrity verification happen before services are stopped.
+
+The Vault GCS restore uses `playbooks/restore_vault_gcp.yaml` and `roles/restore_vault_gcp`, independently of local restore. It preserves the prior Vault data and unseal key for attempted rollback. Provide `gcp_backup_object` when invoking the playbook. **The Vault GCS restore has not yet been executed or validated.**
+
+These guardrails reduce accidental restores but do not guarantee recovery from every failure; retain an independent Proxmox snapshot before testing.
+
 ## Legacy Bootstrap Playbooks
 
 The following playbooks are retained only as legacy/bootstrap code:
