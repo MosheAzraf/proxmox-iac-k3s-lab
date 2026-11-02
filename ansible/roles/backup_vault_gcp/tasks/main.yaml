@@ -1,0 +1,90 @@
+
+---
+- name: Backup Vault to GCP
+  block:
+    - name: Prepare temporary directory
+      ansible.builtin.tempfile:
+        state: directory
+        prefix: vault-gcp-
+      delegate_to: localhost
+      become: false
+      register: backup_tmp
+
+    - name: Create Vault archive
+      block:
+        - name: Stop Vault
+          ansible.builtin.systemd_service:
+            name: vault
+            state: stopped
+
+        - name: Archive Vault data and unseal key
+          ansible.builtin.command:
+            argv:
+              - tar
+              - -czf
+              - /root/vault-backup.tar.gz
+              - -C
+              - /
+              - opt/vault/data
+              - etc/vault.d/unseal.key
+
+        - name: Secure archive
+          ansible.builtin.file:
+            path: /root/vault-backup.tar.gz
+            mode: "0600"
+
+      always:
+        - name: Start Vault
+          ansible.builtin.systemd_service:
+            name: vault
+            state: started
+
+        - name: Unseal Vault
+          ansible.builtin.systemd_service:
+            name: vault-unseal
+            state: restarted
+
+    - name: Fetch Vault archive
+      ansible.builtin.fetch:
+        src: /root/vault-backup.tar.gz
+        dest: "{{ backup_tmp.path }}/vault-backup.tar.gz"
+        flat: true
+      no_log: true
+
+    - name: Encrypt Vault archive
+      ansible.builtin.command:
+        argv:
+          - ansible-vault
+          - encrypt
+          - --vault-password-file
+          - "{{ lookup('env', 'HOME') }}/.k3s-backup-password"
+          - "{{ backup_tmp.path }}/vault-backup.tar.gz"
+      delegate_to: localhost
+      become: false
+      no_log: true
+
+    - name: Upload encrypted backup to GCS
+      ansible.builtin.command:
+        argv:
+          - gcloud
+          - storage
+          - cp
+          - "{{ backup_tmp.path }}/vault-backup.tar.gz"
+          - "gs://proxmox-iac-lab-backups/vault/vault-backup-{{ now(utc=true, fmt='%Y%m%dT%H%M%SZ') }}.tar.gz"
+          - --impersonate-service-account=ansible-backup@proxmox-iac-k3s-lab.iam.gserviceaccount.com
+      delegate_to: localhost
+      become: false
+
+  always:
+    - name: Remove remote archive
+      ansible.builtin.file:
+        path: /root/vault-backup.tar.gz
+        state: absent
+
+    - name: Remove temporary local files
+      ansible.builtin.file:
+        path: "{{ backup_tmp.path }}"
+        state: absent
+      delegate_to: localhost
+      become: false
+      when: backup_tmp.path is defined

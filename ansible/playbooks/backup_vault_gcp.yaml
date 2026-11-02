@@ -1,0 +1,7 @@
+---
+- name: Backup Vault to GCP
+  hosts: vault
+  become: true
+
+  roles:
+    - backup_vault_gcp
