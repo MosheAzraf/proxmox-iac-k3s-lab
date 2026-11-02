@@ -1,0 +1,97 @@
+
+---
+- name: Backup Vault data
+  when: not ansible_check_mode
+  block:
+    - name: Stop Vault
+      ansible.builtin.systemd_service:
+        name: vault
+        state: stopped
+
+    - name: Archive Vault data and unseal key
+      ansible.builtin.command:
+        argv:
+          - tar
+          - -czf
+          - /root/vault-backup.tar.gz
+          - -C
+          - /
+          - opt/vault/data
+          - etc/vault.d/unseal.key
+
+    - name: Secure remote archive
+      ansible.builtin.file:
+        path: /root/vault-backup.tar.gz
+        mode: "0600"
+
+  always:
+    - name: Start Vault
+      ansible.builtin.systemd_service:
+        name: vault
+        state: started
+
+    - name: Unseal Vault
+      ansible.builtin.systemd_service:
+        name: vault-unseal
+        state: restarted
+
+- name: Download encrypted Vault backup
+  when: not ansible_check_mode
+  block:
+    - name: Check encryption password
+      ansible.builtin.stat:
+        path: "{{ lookup('env', 'HOME') }}/.k3s-backup-password"
+      delegate_to: localhost
+      become: false
+      register: backup_password
+
+    - name: Require encryption password
+      ansible.builtin.assert:
+        that: backup_password.stat.isreg | default(false)
+
+    - name: Prepare secure local file
+      ansible.builtin.file:
+        path: "{{ lookup('env', 'HOME') }}/k3s-backups/vault-backup.tmp"
+        state: touch
+        mode: "0600"
+      delegate_to: localhost
+      become: false
+
+    - name: Fetch Vault backup
+      ansible.builtin.fetch:
+        src: /root/vault-backup.tar.gz
+        dest: "{{ lookup('env', 'HOME') }}/k3s-backups/vault-backup.tmp"
+        flat: true
+
+    - name: Encrypt Vault backup
+      ansible.builtin.command:
+        argv:
+          - ansible-vault
+          - encrypt
+          - --vault-password-file
+          - "{{ lookup('env', 'HOME') }}/.k3s-backup-password"
+          - "{{ lookup('env', 'HOME') }}/k3s-backups/vault-backup.tmp"
+      delegate_to: localhost
+      become: false
+
+    - name: Save encrypted backup
+      ansible.builtin.command:
+        argv:
+          - mv
+          - "{{ lookup('env', 'HOME') }}/k3s-backups/vault-backup.tmp"
+          - "{{ lookup('env', 'HOME') }}/k3s-backups/vault-backup.tar.gz"
+      delegate_to: localhost
+      become: false
+
+  always:
+    - name: Remove local temporary file
+      ansible.builtin.file:
+        path: "{{ lookup('env', 'HOME') }}/k3s-backups/vault-backup.tmp"
+        state: absent
+      delegate_to: localhost
+      become: false
+
+    - name: Remove remote temporary archive
+      ansible.builtin.file:
+        path: /root/vault-backup.tar.gz
+        state: absent
