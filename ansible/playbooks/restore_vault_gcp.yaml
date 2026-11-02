@@ -1,0 +1,7 @@
+---
+- name: Restore Vault from GCP
+  hosts: vault
+  become: true
+
+  roles:
+    - restore_vault_gcp
