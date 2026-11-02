@@ -1,0 +1,83 @@
+---
+- name: Backup k3s to GCP
+  block:
+    - name: Create k3s archive
+      block:
+        - name: Stop k3s
+          ansible.builtin.systemd_service:
+            name: k3s
+            state: stopped
+
+        - name: Archive database and token
+          ansible.builtin.command:
+            argv:
+              - tar
+              - -czf
+              - /root/k3s-backup.tar.gz
+              - -C
+              - /var/lib/rancher/k3s/server
+              - db
+              - token
+
+        - name: Secure archive
+          ansible.builtin.file:
+            path: /root/k3s-backup.tar.gz
+            mode: "0600"
+
+      always:
+        - name: Start k3s
+          ansible.builtin.systemd_service:
+            name: k3s
+            state: started
+
+    - name: Prepare temporary directory
+      ansible.builtin.tempfile:
+        state: directory
+        prefix: k3s-gcp-
+      delegate_to: localhost
+      become: false
+      register: backup_tmp
+
+    - name: Fetch archive
+      ansible.builtin.fetch:
+        src: /root/k3s-backup.tar.gz
+        dest: "{{ backup_tmp.path }}/k3s-backup.tar.gz"
+        flat: true
+
+    - name: Encrypt archive
+      ansible.builtin.command:
+        argv:
+          - ansible-vault
+          - encrypt
+          - --vault-password-file
+          - "{{ lookup('env', 'HOME') }}/.k3s-backup-password"
+          - "{{ backup_tmp.path }}/k3s-backup.tar.gz"
+      delegate_to: localhost
+      become: false
+      no_log: true
+
+    - name: Upload encrypted backup to GCS
+      ansible.builtin.command:
+        argv:
+          - gcloud
+          - storage
+          - cp
+          - "{{ backup_tmp.path }}/k3s-backup.tar.gz"
+          - "gs://proxmox-iac-lab-backups/k3s/k3s-backup-{{ now(utc=true, fmt='%Y%m%dT%H%M%SZ') }}.tar.gz"
+          - --impersonate-service-account=ansible-backup@proxmox-iac-k3s-lab.iam.gserviceaccount.com
+      delegate_to: localhost
+      become: false
+
+  always:
+    - name: Remove remote archive
+      ansible.builtin.file:
+        path: /root/k3s-backup.tar.gz
+        state: absent
+
+    - name: Remove temporary local files
+      ansible.builtin.file:
+        path: "{{ backup_tmp.path }}"
+        state: absent
+      delegate_to: localhost
+      become: false
+      when: backup_tmp.path is defined
