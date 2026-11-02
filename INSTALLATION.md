@@ -1,168 +1,125 @@
 # Installation — Proxmox IaC K3s Lab
 
-This guide documents the **actual clean rebuild tested on 19 October 2026**, including manual steps and issues encountered. It assumes a new install on an existing Proxmox host, **not** the removal of unrelated machines. Commands use repository-relative paths unless noted.
+Follow these steps **in order** for a first-time installation. Commands are run from the repository root unless a different location is stated. The Proxmox node and networking below are the values configured in this lab; adjust Terraform and Ansible inventory for another environment.
 
-> **Safety:** `terraform destroy` deletes the managed VMs/LXC, their data, and their local snapshots. Do not run it on an environment containing data you need. For a first-time install, skip the destroy step entirely. Check the plan before any destructive action.
+**Do not run `terraform destroy` as part of installation.** The project is an IaC learning lab, not a fully unattended production deployment.
 
 ## 1. Prerequisites
 
-- Proxmox VE with node `pve`, network bridge `vmbr0`, `local-lvm`, Ubuntu VM template **9000**, and LXC template `local:vztmpl/ubuntu-24.04-standard_24.04-2_amd64.tar.zst` available (see [Terraform configuration](terraform/_docs/README.md)).
-- Development machine with Terraform, Ansible, `kubectl`, Helm, `jq`, `openssl`, and the Ansible `kubernetes.core` collection (`ansible-galaxy collection install kubernetes.core`). For optional GCP backup, also install and authenticate Google Cloud CLI and prepare the local Ansible Vault encryption password file (`~/.k3s-backup-password`); see [Ansible backup documentation](ansible/_docs/README.md#backup-encryption-password) and [Terraform GCP initial setup](terraform/_docs/README.md#initial-gcp-access-setup).
-- SSH keypair; access to the provisioned hosts and Kubernetes API; Proxmox API access configured as documented in [Terraform layer](terraform/_docs/README.md).
-- A **local development Vault** running on the development machine, storing the Proxmox API credentials at `secret/proxmox/proxmox`. This is **not** the cluster's Vault LXC.
-- On the development machine, supply the local Vault environment and Terraform SSH key variable (adapt the public key file if needed):
+- Proxmox VE node `pve` with `vmbr0`, `local-lvm`, Ubuntu VM template ID `9000`, and the Ubuntu 24.04 LXC template referenced by `terraform/vault-lxc`.
+- Development machine with Git, Terraform, Ansible, `kubectl`, Helm, `openssl`, SSH keypair, and the `kubernetes.core` Ansible collection.
+- Network/SSH access from the development machine to the provisioned guests.
+- **Local development Vault** installed, initialized, unsealed, and accessible on the development machine. This Vault stores the Proxmox API credential; it is **not** the cluster Vault LXC.
 
 ```bash
-export VAULT_ADDR='http://127.0.0.1:8200'
-# Supply the LOCAL development Vault token securely; do not save it to Git.
-export TF_VAR_ssh_public_key="$(cat ~/.ssh/id_ed25519.pub)"
+ansible-galaxy collection install kubernetes.core
+git clone https://github.com/MosheAzraf/proxmox-iac-k3s-lab.git
+cd proxmox-iac-k3s-lab
 ```
 
-For development Vault authentication use your existing local login/session, or provide `VAULT_TOKEN` securely. The Proxmox API token must be present there **before** Terraform is used. Full API user/role setup is in the Terraform layer documentation.
+## 2. Create the Proxmox API identity
 
-### Proxmox API and Local Vault Setup
-
-Before the first Terraform run, configure a dedicated Proxmox API identity on the Proxmox host. Create the `TerraformProv` role with the required privileges:
+Run on the **Proxmox host** as an administrator. Create the project's custom role, a dedicated user, assign the role at `/` with propagation, and create its API token:
 
 ```bash
 pveum role add TerraformProv -privs "Datastore.AllocateSpace Datastore.Audit Pool.Allocate SDN.Use Sys.Audit Sys.Console Sys.Modify VM.Allocate VM.Audit VM.Clone VM.Config.CDROM VM.Config.CPU VM.Config.Cloudinit VM.Config.Disk VM.Config.HWType VM.Config.Memory VM.Config.Network VM.Config.Options VM.GuestAgent.Audit VM.GuestAgent.Unrestricted VM.Migrate VM.PowerMgmt"
-```
-
-```bash
 pveum user add terraform@pam
 pveum aclmod / -user terraform@pam -role TerraformProv
 pveum user token add terraform@pam terraform
 ```
 
-The token ID is `terraform@pam!terraform`. Securely retain the token secret shown at creation; do not commit or paste it into the repository. The custom role is assigned at the Proxmox Datacenter root path (`/`) with propagation enabled.
+The token ID is `terraform@pam!terraform`. **Save its generated secret immediately:** it is only displayed at creation. The token and effective privileges must permit the Terraform actions defined for the lab. Never commit the secret.
 
-On the development machine, store the API endpoint, token ID and token secret in the **local development Vault** (not the Vault LXC provisioned by this project), at KV v2 path `secret/proxmox/proxmox`. The expected fields are `proxmox_api_url`, `proxmox_token_id` and `proxmox_token_secret`. Follow the [local Vault secret instructions](terraform/_docs/README.md#local-vault-secret) to populate them securely.
+## 3. Store the Proxmox token in local development Vault
 
-Terraform reads these values through the Vault provider's ephemeral secret resource. The Proxmox API token is not hardcoded into the Terraform configuration or written to Terraform State by that resource. The development Vault must be accessible and authenticated before running Terraform.
+Authenticate to your **local development Vault**. The following commands assume a KV v2 engine mounted at `secret/`; enable/configure that engine once if it does not already exist.
 
-## 2. Infrastructure: Terraform
+```bash
+export VAULT_ADDR="http://127.0.0.1:8200"
+vault login
+vault kv put secret/proxmox/proxmox \
+  proxmox_api_url="https://<proxmox-host>:8006/api2/json" \
+  proxmox_token_id="terraform@pam!terraform" \
+  proxmox_token_secret=-
+```
 
-Terraform uses two independent roots and states: `terraform/vms` for k3s VMs **201/202** and `terraform/vault-lxc` for Vault LXC **210**. Default networking is `10.0.20.101`, `10.0.20.102`, `10.0.20.110` (see Terraform definitions for current values).
+The last field prompts for the secret on standard input. Replace the endpoint placeholder with your Proxmox address; do not paste actual credentials into Git or documentation.
 
-From the repository root, initialize and create:
+Terraform reads `proxmox_api_url`, `proxmox_token_id`, and `proxmox_token_secret` from this path using an ephemeral Vault resource. Make the public SSH key available to Terraform:
+
+```bash
+export TF_VAR_ssh_public_key="$(cat ~/.ssh/id_ed25519.pub)"
+```
+
+## 4. Provision infrastructure with Terraform
+
+The three Terraform roots have **separate state**:
+
+| Root | Provisioned resources |
+| --- | --- |
+| `terraform/vms` | k3s controller VM 201 and worker VM 202 |
+| `terraform/vault-lxc` | Cluster Vault LXC 210 |
+| `terraform/gcp` | Optional GCS backup bucket, IAM, and API services |
+
+From the repository root:
 
 ```bash
 terraform -chdir=terraform/vms init
-terraform -chdir=terraform/vault-lxc init
 terraform -chdir=terraform/vms plan
 terraform -chdir=terraform/vms apply
+
+terraform -chdir=terraform/vault-lxc init
 terraform -chdir=terraform/vault-lxc plan
 terraform -chdir=terraform/vault-lxc apply
 ```
 
-### Optional: destructive rebuild tested during the session
+Review plans before approving. The default guests are `10.0.20.101`, `10.0.20.102`, and `10.0.20.110`. Keep `terraform.tfstate` and credentials outside Git. See [Terraform operations](terraform/_docs/README.md).
 
-**Do not perform this for an initial installation.** After ensuring no data needs saving and reviewing **both** plans:
+## 5. Bootstrap hosts and platform with Ansible
 
-```bash
-terraform -chdir=terraform/vms plan -destroy
-terraform -chdir=terraform/vault-lxc plan -destroy
-terraform -chdir=terraform/vms destroy
-terraform -chdir=terraform/vault-lxc destroy
-```
-
-The tested destroy removed only VM IDs 201/202 and LXC ID 210, then the normal `apply` recreated all three. Never remove or overwrite Terraform state merely to rebuild resources. `terraform.tfstate` contains sensitive infrastructure information; keep it out of Git.
-
-**Observed during recreation:** Proxmox displayed `Systemd 255 detected. You may need to enable nesting` for the LXC, but Terraform finished successfully. Treat a failing service as a separate issue rather than assuming this warning is always harmless.
-
-## 3. Bootstrap: Ansible
-
-Wait until the new machines finish booting and SSH is accessible, then run from `ansible/`:
+Wait for the new guests to accept SSH. Run from `ansible/`:
 
 ```bash
 cd ansible
 ansible-playbook site.yaml -e confirm_install=true
 ```
 
-`site.yaml` performs the confirmation gate, common node setup, k3s controller + worker, local kubeconfig, Traefik, initial Argo CD, Vault service installation, and root Application creation.
+`site.yaml` configures hosts, installs k3s controller/worker, merges the local kubeconfig, bootstraps Traefik and Argo CD, installs the cluster Vault service, and applies Argo CD's root Application. This is for **initial bootstrap**, not routine reconciliation.
 
-**Observed startup behavior:** An immediate run after Terraform failed with SSH `Connection refused` on both fresh VMs. After SSH became ready, a retry proceeded. The fresh Vault LXC likewise initially timed out on SSH; once reachable, re-running `site.yaml` finished successfully. If needed, wait using the inventory groups:
-
-```bash
-ansible k3s_cluster -m wait_for_connection -a 'timeout=120'
-ansible vault-k3s -m wait_for_connection -a 'timeout=120'
-```
-
-The successful second run reported no changes to already installed k3s nodes. Avoid running bootstrap against a healthy running cluster merely as a test.
-
-## 4. Local Kubernetes CLI
-
-The `kubeconfig` Ansible role reads the new controller credentials and merges a named cluster/user/context (`proxmox-iac-k3s`) into the **standard** `~/.kube/config`, preserving differently named entries and making the lab the current context. It backs up the previous file if it changes and uses file mode `0600`.
+Confirm Kubernetes access:
 
 ```bash
 kubectl get nodes
 ```
 
-Both `k3s-controller-01` and `k3s-worker-01` should be `Ready`. On the tested rebuild, the old default kubeconfig initially failed with `x509: certificate signed by unknown authority`; refreshing the local configuration fixed this. **Note:** legacy entries with other names (including `default`) are not automatically deleted. If running only the kubeconfig role:
+Expect both nodes to be `Ready`. The local kubeconfig role uses the named context `proxmox-iac-k3s`.
 
-```bash
-ansible-playbook site.yaml --tags kubeconfig -e confirm_install=true
-```
+## 6. Initialize the cluster Vault LXC
 
-The `confirm_install=true` switch remains required, even for the tagged run.
+The cluster Vault is independent of the development-machine Vault. Initial Vault initialization, KV setup, policy, and application secret values remain manual.
 
-## 5. GitOps synchronization
-
-`site.yaml` creates the Argo CD root Application using `_kubernetes/bootstrap/root-app.yaml`. **A created Application is not proof that it has synced.** During the recorded rebuild, `root-app` remained `OutOfSync / Missing`; a hard refresh did not start sync. Explicit sync was required:
-
-```bash
-kubectl -n argocd patch application root-app --type merge -p '{"operation":{"sync":{"revision":"HEAD","prune":true}}}'
-```
-
-After that, Argo CD created the child Applications, including `external-secrets`. Later the `argocd` Application itself was `OutOfSync` because its Helm bootstrap and GitOps-managed manifests did not match. After reviewing its state, the operator triggered sync:
-
-```bash
-kubectl -n argocd patch application argocd --type merge -p '{"operation":{"sync":{"revision":"HEAD"}}}'
-```
-
-Some Applications were briefly `Progressing`, then all 19 reached `Synced / Healthy`.
-
-**Current code note:** automatic self-healing sync was **added subsequently** to both `root-app` and the `argocd` child Application. The manual patch commands above document what actually happened and serve as fallback, **not** mandatory steps for every future run. These automated changes have not yet been validated in another full rebuild. Do not force-sync Argo CD without understanding possible resource ownership changes; it can update/restart the control plane components.
-
-## 6. Initial Vault setup — manual
-
-Terraform creates the cluster Vault LXC and Ansible installs the Vault service. **Vault does not initialize or populate secrets automatically.** The local development Vault (used by Terraform) is entirely separate.
-
-### 6.1 Connect and check status
+Connect to the **LXC**:
 
 ```bash
 ssh root@10.0.20.110
-export VAULT_ADDR=http://127.0.0.1:8200
+export VAULT_ADDR="http://127.0.0.1:8200"
 vault status
 ```
 
-For a newly provisioned Vault, `Initialized: false`, `Sealed: true`, and a nonzero `vault status` exit code are expected. After recreating the LXC, SSH may warn `REMOTE HOST IDENTIFICATION HAS CHANGED!`; verify the new host fingerprint through Proxmox **before** removing the stale known-hosts entry:
-
-```bash
-ssh-keygen -R 10.0.20.110
-ssh root@10.0.20.110
-```
-
-### 6.2 Initialize and unseal
-
-Run **once** on the Vault LXC:
+On a fresh instance, initialize **once** and unseal interactively:
 
 ```bash
 vault operator init -key-shares=1 -key-threshold=1
 vault operator unseal
+vault login
+vault secrets enable -path=secret kv-v2
 ```
 
-Record the generated unseal key and initial root token **privately**, never in shell history, public logs or repository files. The unseal command prompts for the key without echoing it. The successful unseal shows `Sealed: false`.
+Keep the initial root token and unseal key secure and separate from the repository. These single-share and disk-based unseal arrangements are **lab-only**, not production recommendations.
 
-These one-share settings and the documented lab disk-based unseal helper are **for the homelab only**, not recommended production security design. A rebuilt instance receives fresh credentials. Previously printed tokens/keys from destroyed instances must not be reused.
-
-### 6.3 Authenticate, enable secrets engine, and policy
-
-Still inside the cluster Vault LXC:
+Create the External Secrets read policy:
 
 ```bash
-export VAULT_TOKEN="$(vault login -method=token -token-only)"
-vault secrets enable -path=secret kv-v2
 vault policy write eso-read - <<'POLICY'
 path "secret/data/apps/*" {
   capabilities = ["read"]
@@ -173,83 +130,104 @@ path "secret/metadata/apps/*" {
 POLICY
 ```
 
-The login prompts for the **cluster Vault initial root token**. These commands are for a fresh, uninitialized Vault; enabling an already enabled secrets engine again will fail.
+Create the required KV v2 values using interactive input; do **not** put actual secret values on the command line. The two current secrets are:
 
-### 6.4 Create the two application secrets
-
-The two Vault KV **CLI paths** and required keys are:
-
-| Vault CLI path | Key | Used by |
-| --- | --- | --- |
-| `secret/apps/homarr` | `db-encryption-key` | Homarr |
-| `secret/apps/renovate` | `RENOVATE_TOKEN` | Renovate |
-
-The Vault API paths used by External Secrets are under `secret/data/apps/...` for KV v2; the `vault kv` CLI uses `secret/apps/...`.
-
-Generate a new Homarr encryption key securely with `openssl rand -hex 32`. Create a new GitHub **fine-grained personal access token** for Renovate, scoped to **only** `MosheAzraf/proxmox-iac-k3s-lab` (repository access: *Only select repositories*). During the recorded rebuild, it was created without an expiration date as an explicit operator choice. The permissions selected at the time were:
-
-| Repository permission | Access |
+| Vault CLI path | Required key |
 | --- | --- |
-| Commit statuses | Read and write |
-| Contents | Read and write |
-| Dependabot alerts | Read-only |
-| Issues | Read and write |
-| Metadata | Read-only (required) |
-| Pull requests | Read and write |
-| Workflows | Read and write |
+| `secret/apps/homarr` | `db-encryption-key` |
+| `secret/apps/renovate` | `RENOVATE_TOKEN` |
 
-Only grant permissions you actually need; these reproduce the session's selection, not a guarantee of minimum permissions for every Renovate configuration. Keep the token private and review/revoke unused tokens periodically, especially if using *No expiration*.
-
-Avoid putting secret values in shell commands or chat. The commands below prompt without displaying secrets and pass the values to Vault through standard input:
+Use a securely generated Homarr encryption key (for example, `openssl rand -hex 32`) and an appropriately scoped GitHub fine-grained token for Renovate. Within the Vault LXC's Bash shell:
 
 ```bash
 read -rs -p 'Homarr key: ' HOMARR_KEY; echo
 printf '%s' "$HOMARR_KEY" | vault kv put secret/apps/homarr db-encryption-key=-
 unset HOMARR_KEY
-read -rs -p 'Renovate GitHub token: ' RENOVATE_TOKEN; echo
+
+read -rs -p 'Renovate token: ' RENOVATE_TOKEN; echo
 printf '%s' "$RENOVATE_TOKEN" | vault kv put secret/apps/renovate RENOVATE_TOKEN=-
 unset RENOVATE_TOKEN
-vault kv list secret/apps/
 ```
 
-**Shell note:** These prompts use Bash (`read -rs -p`), appropriate inside the Vault LXC. On the original rebuild, the listing also included `pgadmin`, which has since been removed from the current manifests. On a new setup, only `homarr` and `renovate` are expected.
+The Ansible-managed `vault-unseal` helper requires the unseal key to be provisioned on the cluster Vault LXC as documented by the existing Vault role. The helper is a convenience mechanism with security tradeoffs; the installation itself does not automatically provision a fresh key.
 
-## 7. Configure Vault Kubernetes authentication
+## 7. Bring Argo CD / GitOps into sync
 
-The Vault auth Playbook requires the namespace, `vault-auth` ServiceAccount and TokenReview binding created by GitOps. **Do not run it before Argo CD has actually deployed them.** The first attempt in the rebuild failed because namespace `external-secrets` did not exist yet.
+Return to the development machine, in `ansible/`:
 
-From your **development machine**, return to `ansible/` and confirm the ServiceAccount exists:
+```bash
+kubectl get applications -n argocd
+kubectl get pods -n external-secrets
+```
+
+The root Application is created by `site.yaml` and currently has automated sync configured. Wait for GitOps to create its child Applications and External Secrets resources. If the root app remains `OutOfSync` after reviewing the issue, an operator can trigger a manual sync:
+
+```bash
+kubectl -n argocd patch application root-app --type merge -p '{"operation":{"sync":{"revision":"HEAD","prune":true}}}'
+```
+
+The manual command is a **fallback**, not a normal required installation step. The automated initial sync behavior has not been verified in another complete clean rebuild since it was enabled.
+
+## 8. Configure Vault Kubernetes authentication
+
+After GitOps creates the `external-secrets` namespace and `vault-auth` ServiceAccount:
 
 ```bash
 kubectl get sa vault-auth -n external-secrets
-```
-
-Then run (the token is from the **cluster Vault LXC**, not the local Terraform Vault):
-
-```bash
 read -s VAULT_TOKEN && export VAULT_TOKEN
 ansible-playbook playbooks/vault.yaml --tags vault-kubernetes-auth
 unset VAULT_TOKEN
 ```
 
-The `read -s` command is deliberately silent while waiting for pasted input; press Enter after pasting the token. This configures the Kubernetes auth backend and the `external-secrets` role tied to policy `eso-read`. No static Kubernetes Vault token is required.
+Use the **cluster Vault administrator token**, not the development Vault credential. This configures Vault's Kubernetes auth method and the `external-secrets` Vault role using `eso-read`, without a long-lived Kubernetes Vault token.
 
-## 8. Verify External Secrets
+## 9. Optional: configure encrypted GCP backups
 
-```bash
-kubectl get clustersecretstore vault-k3s
-kubectl get externalsecrets -A
-```
-
-Expected with the revised manifests: Store `Valid / True` and both ExternalSecrets `SecretSynced / True`. During the **19 October rebuild**, three ExternalSecrets were present and initially showed `SecretSyncedError`. After adding their Vault values, a one-time force reconciliation resolved the stale statuses:
+The GCP project `proxmox-iac-k3s-lab` and billing must already exist. Install the Google Cloud CLI and authenticate on the development machine:
 
 ```bash
-kubectl get externalsecrets -A -o json | jq -r '.items[] | [.metadata.namespace, .metadata.name] | @tsv' | while IFS=$'\t' read -r ns name; do kubectl annotate externalsecret "$name" -n "$ns" force-sync="$(date +%s)" --overwrite; done
+gcloud auth login
+gcloud config set project proxmox-iac-k3s-lab
+gcloud auth application-default login
+gcloud auth application-default set-quota-project proxmox-iac-k3s-lab
 ```
 
-This command uses `zsh`/`bash` shell syntax and reconciles **all current** ExternalSecrets; only use if appropriate. The original test ended with three `SecretSynced / True` results. **The new two-secret layout has not yet been validated on a running cluster.**
+From the repository root, create the bucket, `k3s/` and `vault/` prefixes, Service Account, IAM bindings, and lifecycle rule through Terraform:
 
-## 9. Final Kubernetes / GitOps verification
+```bash
+terraform -chdir=terraform/gcp init
+terraform -chdir=terraform/gcp plan
+terraform -chdir=terraform/gcp apply
+```
+
+Grant your authenticated user impersonation of the dedicated Service Account (one-time, **repeat if that Service Account is recreated**):
+
+```bash
+gcloud iam service-accounts add-iam-policy-binding \
+  ansible-backup@proxmox-iac-k3s-lab.iam.gserviceaccount.com \
+  --member="user:$(gcloud auth list --filter='status:ACTIVE' --format='value(account)')" \
+  --role="roles/iam.serviceAccountTokenCreator" \
+  --project="proxmox-iac-k3s-lab"
+```
+
+**Create the backup encryption password once**, on the development machine. Preserve an existing password—it is required for decrypting previous backups:
+
+```bash
+test -e ~/.k3s-backup-password || (umask 077; openssl rand -base64 32 > ~/.k3s-backup-password)
+```
+
+Keep a separate secure copy of this password. No Service Account JSON key is used. Check GCP connectivity from `ansible/`:
+
+```bash
+cd ansible
+ansible-playbook playbooks/gcp_connection.yaml
+```
+
+See [Ansible backup/restore commands](ansible/_docs/README.md) and [Terraform GCP notes](terraform/_docs/README.md).
+
+## 10. Final verification
+
+Run from the development machine with the intended Kubernetes context:
 
 ```bash
 kubectl get nodes
@@ -258,26 +236,14 @@ kubectl get clustersecretstore vault-k3s
 kubectl get externalsecrets -A
 ```
 
-**Recorded result, 19 October 2026 (before simplification):** both k3s nodes `Ready`, 19/19 Argo CD Applications `Synced / Healthy`, 3/3 ExternalSecrets `SecretSynced / True`, and the ClusterSecretStore `Valid / True`. The Argo CD site `argocd.home.lab` became accessible.
+Expected for the current reduced platform: two nodes `Ready`, all 13 Argo CD Applications `Synced / Healthy`, Vault ClusterSecretStore `Valid / Ready=True`, and two ExternalSecrets `SecretSynced / Ready=True`.
 
-**Current expected configuration:** Longhorn, CloudNativePG and pgAdmin have been removed from GitOps manifests. A fresh reconciliation and complete validation of the reduced set are still pending. Do not present the old 19/19 result as validation of the reduced set.
+**Evidence:** these statuses were observed on the existing running lab on 2 November 2026 following recovery testing. The older clean build from 19 October 2026 used a larger component set, so the current installation sequence is **not represented as a newly verified unattended rebuild**.
 
-For a newly installed Argo CD, the initial account is `admin`; retrieve the bootstrap password privately:
+## Operational guides and limits
 
-```bash
-kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath='{.data.password}' | base64 --decode; echo
-```
+- [Terraform](terraform/_docs/README.md) — infrastructure operations and cloud IAM.
+- [Ansible](ansible/_docs/README.md) — updates, local and GCS backup/restore, and validation.
+- [Kubernetes / GitOps](_kubernetes/_docs/README.md) — application reconciliation and secrets.
 
-The initial admin Secret may no longer exist after credentials are changed. Do not share the password, and change/restrict the initial admin access after setup.
-
-## 10. Known limits and security reminders
-
-- This is an **infrastructure experimentation lab**, not a production-like application hosting platform. Longhorn, CloudNativePG and pgAdmin were deliberately removed because their ongoing complexity did not support an active infrastructure exercise. Homarr remains as a dashboard; its persistence uses `local-path`.
-- The **rebuild recreates infrastructure and applications, not previous application data**. The earlier tested Ansible backup/restore covers k3s SQLite state, server token and Vault storage/unseal key; **no PVC recovery**. See [Ansible DR documentation](ansible/_docs/README.md).
-- The first rebuild required SSH readiness retries, manual Vault setup and manual Argo CD sync. A later code change adds Argo CD automated sync, but a second unattended fresh rebuild has not been tested.
-- `~/.kube/config` is merged by the Ansible role and backed up on changes. It uses named lab entries; differently named legacy entries remain unless manually removed.
-- The development Vault's Proxmox API token should never be confused with the newly created Vault LXC root token. Keep all keys/tokens out of terminal transcripts and Git. Rotate any credentials inadvertently exposed in logs or chat; do not embed unseal keys, root tokens or CLI transcripts in Proxmox container descriptions.
-- If using `rsync` to apply a downloaded code update, macOS may copy `.DS_Store` files and `--backup` can create `*.bak` files. Review `git status`, and stage only intended source files.
-- GCP backup creation and encrypted upload were verified on **1 November 2026**. Download and restore from GCS remain untested. GCP integration is optional and does not affect the local backup workflow. See [Ansible backup documentation](ansible/_docs/README.md#gcp-backup) and [Terraform GCP setup](terraform/_docs/README.md#initial-gcp-access-setup).
-
-For configuration detail see [Terraform](terraform/_docs/README.md), [Ansible](ansible/_docs/README.md) and [GitOps](_kubernetes/_docs/README.md).
+Backup/restore covers **k3s SQLite and server token**, plus **cluster Vault data and unseal key**; it does not recover application PVC data. Recovery steps require downtime and may not automatically roll back from every failure.
