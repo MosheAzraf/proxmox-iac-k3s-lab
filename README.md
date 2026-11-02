@@ -1,101 +1,67 @@
 # Proxmox IaC K3s Lab
 
-A hands-on Infrastructure as Code homelab built on Proxmox. It demonstrates the full lifecycle of a small Kubernetes environment: provisioning, bootstrapping, GitOps reconciliation, secrets management, updates, and local disaster recovery. The project also includes an initial Google Cloud integration managed with Terraform.
+A hands-on Infrastructure as Code homelab for provisioning, configuring, operating, and recovering a small Kubernetes environment across **Proxmox VE** and **Google Cloud**.
 
-**This is an infrastructure experimentation and portfolio lab, not a production-ready application hosting platform.** Its purpose is to demonstrate reproducible infrastructure, automation, and operational practices, rather than running as many services as possible.
+The goal is reproducibility and practical infrastructure engineering—not a production-ready platform or a large application stack.
 
 ## Architecture
 
-| Layer | Technology | Responsibility |
+| Layer | Tools | Purpose |
 | --- | --- | --- |
-| Virtualization | Proxmox VE | Runs the lab hosts |
-| Infrastructure | Terraform | Provisions k3s VMs and the Vault LXC; manages initial GCP project services |
-| Bootstrap | Ansible | Configures hosts, installs k3s, Traefik, initial Argo CD and Vault |
-| Container orchestration | k3s | Kubernetes cluster |
-| GitOps | Argo CD | Reconciles platform applications from Git |
-| Secrets | Vault + External Secrets Operator | Synchronizes application secrets using Kubernetes authentication |
-| Secret scanning | GitGuardian | Monitors the GitHub repository for exposed secrets |
-| Maintenance | Ansible + Renovate | Host/k3s updates and Helm dependency updates |
-| Observability | Prometheus + Grafana | Monitors cluster infrastructure |
-| Recovery | Ansible | Local backup and restore of k3s and Vault |
-
-The project uses **two separate Vault instances**: a development-machine Vault for Terraform's Proxmox API token and a dedicated Proxmox Vault LXC for Kubernetes application secrets.
-
-## Repository
+| Virtualization | Proxmox VE | Hosts the Kubernetes VMs and Vault LXC |
+| Provisioning | Terraform | Manages Proxmox VMs, Vault LXC, and GCP resources |
+| Configuration | Ansible | Bootstraps and updates hosts and services; handles backup/restore |
+| Kubernetes | k3s | Controller and worker |
+| GitOps | Argo CD | Reconciles platform configuration from Git |
+| Networking & TLS | Traefik, MetalLB, cert-manager | Local ingress, load balancing, certificates |
+| Secrets | Vault, External Secrets Operator | Supplies application secrets without putting values in Git |
+| Monitoring & updates | Prometheus, Grafana, Renovate | Cluster visibility and dependency updates |
+| Recovery | Ansible Vault, Google Cloud Storage | Encrypted Vault backups and local/GCS recovery workflows |
 
 ```text
-terraform/          # Proxmox VMs, Vault LXC and GCP (separate Terraform states)
-ansible/            # Central bootstrap, roles, maintenance, backup/restore
-_kubernetes/        # Argo CD root app, applications and platform manifests
-renovate.json       # Helm/Argo CD dependency update policy
+Proxmox VE
+├── k3s controller (VM 201)
+├── k3s worker     (VM 202)
+└── Vault          (LXC 210)
+     └── External Secrets → Kubernetes workloads
+
+Terraform → Ansible bootstrap → Argo CD / GitOps
+                         └── Ansible backup & restore ↔ GCS
 ```
 
-## GitOps-managed components
+A **separate development-machine Vault** holds the Proxmox API credential used by Terraform. The Vault LXC holds Kubernetes application secrets. They are not interchangeable.
 
-Argo CD, cert-manager, External Secrets, MetalLB, kube-prometheus-stack/Grafana, Homarr and Renovate. Traefik is bootstrapped with Ansible.
+## What's included
 
-Homarr provides a simple dashboard for users who want one. Its current manifest is included in the standard Argo CD deployment; making it optional at deployment time is a possible future refinement.
-
-## Intentional scope and simplification
-
-This lab focuses on **infrastructure lifecycle and automation**, not operating a local production-like application stack. Each component should support a concrete scenario: provisioning, configuration, GitOps, networking, secrets, monitoring, maintenance, or recovery.
-
-The project previously included Longhorn, CloudNativePG, pgAdmin, and Reloader. These components were removed from the GitOps manifests to reduce operational overhead and keep the architecture aligned with its actual use cases:
-
-| Removed component | Reason |
-| --- | --- |
-| Longhorn | No application PVC in the reviewed manifests required Longhorn; the identified persistent workloads use Kubernetes `local-path` storage. Maintaining a separate distributed storage layer did not support the current lab goals. |
-| CloudNativePG | No PostgreSQL cluster was being used by the project's applications. Running an operator without a real database workload added complexity without demonstrating an active requirement. |
-| pgAdmin | With no PostgreSQL workload to manage, the administration UI and its associated Secret, ingress route, and certificate were unnecessary. |
-| Reloader | No remaining workload was configured to use it; Renovate runs as a CronJob, which the installed Reloader configuration excluded. |
-
-**Reducing unused services is an engineering decision, not a reduction in the project's technical scope.** It demonstrates the ability to evaluate dependencies, remove unjustified infrastructure, and prioritize a system that is easier to understand, rebuild, validate, and maintain.
-
-Vault and External Secrets remain because they have real consumers, including Renovate's GitHub token and Homarr's encryption key. Homarr is retained as a convenient dashboard, without making dashboards the purpose of the lab.
-
-The cleanup was applied to both Git and the running cluster on **26 October 2026**, including removal of the retired applications and their remaining Kubernetes resources. The running reduced platform was subsequently validated.
-
-## What has been tested
-
-### Reduced platform validation — 26 October 2026
-
-- Both k3s nodes reported `Ready` (`v1.35.8+k3s1`).
-- Argo CD root application and all **12 child Applications** reported `Synced / Healthy` (**13/13** in total).
-- Vault was unsealed using the existing Ansible-managed `vault-unseal` systemd service after supplying its missing key file through the Vault playbook.
-- The `vault-k3s` ClusterSecretStore returned to `Valid / Ready=True`.
-- Homarr and Renovate ExternalSecrets both reported `SecretSynced / Ready=True`.
-- Retired Longhorn, CloudNativePG, pgAdmin and Reloader applications and their namespaces were removed from the running cluster. The pgAdmin PVC and its PV were also deleted; the cleanup required manual handling of stale Longhorn webhooks/finalizers and a PVC finalizer.
-
-This confirms **in-place GitOps reconciliation and operational cleanup** of the reduced environment, not a new clean installation or a repeat of the full disaster-recovery procedure.
-
-### Previous clean rebuild — 19 October 2026
-
-The following are historical results from before the component cleanup:
-
-- Terraform **destroy and clean apply** for k3s controller VM **201**, worker VM **202**, and Vault LXC **210** (19 October 2026).
-- Ansible `site.yaml` bootstrapped a fresh k3s cluster and platform services. Initial SSH readiness required retrying after the new machines finished starting.
-- Local `kubectl` works through `~/.kube/config`; both nodes reached `Ready`.
-- Vault was initialized and unsealed; Kubernetes auth and three initial application secrets were configured. All three ExternalSecrets reached `SecretSynced / Ready=True` **in the earlier configuration**.
-- All **19 Argo CD Applications** reached `Synced / Healthy` **in the earlier configuration**.
-- A separate, earlier **local backup/restore test** recovered the k3s SQLite datastore/server token and Vault data. **PVC data is not covered.**
-- Terraform enabled the GCP IAM API (`iam.googleapis.com`) and Cloud Storage API (`storage.googleapis.com`) in the manually created `proxmox-iac-k3s-lab` project. A subsequent `terraform plan` returned **No changes** (26 October 2026).
-- GitGuardian's GitHub integration completed its initial historical scan with no detected secret incidents and has automatic monitoring enabled.
-
-**Important:** The successful fresh-install exercise included **manual steps** (Vault initialization, unseal, KV v2, policy, initial secrets, and Argo CD synchronization). Automated sync for the root and Argo CD Applications was added to the manifests *after* that test; a fully unattended end-to-end fresh install has **not** been demonstrated. The reduced component set has been validated in the running cluster, but has **not** yet undergone a fresh end-to-end rebuild.
+- Automated VM/LXC provisioning with isolated Terraform states.
+- k3s, Traefik, Argo CD, and Vault bootstrap through Ansible.
+- GitOps-managed Argo CD, cert-manager, External Secrets, MetalLB, Prometheus/Grafana, Homarr, and Renovate.
+- Maintenance playbooks and separate local/GCP backup and restore workflows for **k3s and Vault**.
+- Service Account Impersonation for GCS, without Service Account JSON keys.
 
 ## Getting started
 
-Follow the [complete installation guide](INSTALLATION.md), including prerequisites, commands, manual bootstrap steps, troubleshooting, and final verification.
+Follow **[INSTALLATION.md](INSTALLATION.md)** from the beginning: Proxmox API identity, local Vault credentials, Terraform, Ansible, Argo CD, Vault integration, and verification.
 
-For deeper reference:
+Use the layer-specific guides for ongoing operations:
 
-- [Terraform layer](terraform/_docs/README.md)
-- [Ansible layer](ansible/_docs/README.md)
-- [Kubernetes / GitOps layer](_kubernetes/_docs/README.md)
+| Guide | Contains |
+| --- | --- |
+| [Terraform](terraform/_docs/README.md) | Resources, access, plan/apply, and GCP configuration |
+| [Ansible](ansible/_docs/README.md) | Bootstrap, updates, local/GCS backup and restore commands |
+| [Kubernetes / GitOps](_kubernetes/_docs/README.md) | Argo CD, platform components, secrets, and validation |
 
-## Scope and limitations
+## Verified results
 
-This lab demonstrates reproducible infrastructure and platform setup, not data preservation across rebuilds. The clean rebuild discarded old application data. Vault's lab unseal helper is not a production-grade seal solution; never commit tokens, unseal keys, kubeconfigs, Terraform state or real application secrets. Local backup/restore does not include PVC data, and GCP backup is planned but not implemented. The GCP IAM API is enabled, but dedicated Service Accounts and IAM permissions have not yet been configured.
+**2 November 2026:** Both k3s and Vault were backed up and restored successfully **locally and through GCS** using Ansible. GCS backups were encrypted with Ansible Vault. Post-restore validation showed two k3s nodes `Ready`, 13 Argo CD Applications `Synced / Healthy`, the Vault ClusterSecretStore `Valid / Ready=True`, and two ExternalSecrets `SecretSynced / Ready=True`. The ExternalSecrets status checks did **not** establish a new sync timestamp.
+
+A clean infrastructure rebuild was demonstrated on **19 October 2026**, before the later platform simplification; the current smaller platform has been validated in place, **not** through another complete clean rebuild.
+
+**Recovery scope:** k3s SQLite datastore/server token and Vault data/unseal key. **PVC data is not backed up by these workflows.** Rollback is attempted but not guaranteed after every failure.
+
+## Design boundaries
+
+This is a learning/portfolio environment, not production-grade disaster recovery. Its Vault auto-unseal helper uses a local disk key for lab convenience. Secrets, tokens, backup encryption passwords, kubeconfigs, and Terraform state must stay outside Git. The GitOps platform intentionally excludes unused Longhorn, CloudNativePG, pgAdmin, and Reloader components.
 
 ## License
 
