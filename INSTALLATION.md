@@ -149,7 +149,19 @@ printf '%s' "$RENOVATE_TOKEN" | vault kv put secret/apps/renovate RENOVATE_TOKEN
 unset RENOVATE_TOKEN
 ```
 
-The Ansible-managed `vault-unseal` helper requires the unseal key to be provisioned on the cluster Vault LXC as documented by the existing Vault role. The helper is a convenience mechanism with security tradeoffs; the installation itself does not automatically provision a fresh key.
+The lab's Ansible bootstrap installs the `vault-unseal` helper and unit, but **does not install a newly generated key automatically**. To use this optional lab-only service, **on the cluster Vault LXC as root**, enter the key interactively (do not type it into the shell command itself):
+
+```bash
+read -rs -p 'Vault unseal key: ' UNSEAL_KEY; echo
+umask 077
+printf '%s' "$UNSEAL_KEY" > /etc/vault.d/unseal.key
+unset UNSEAL_KEY
+chmod 600 /etc/vault.d/unseal.key
+systemctl daemon-reload
+systemctl enable --now vault-unseal
+```
+
+The role also supports provisioning this key using `vault_unseal_key` when explicitly supplied securely. **This disk-stored key is a homelab convenience, not secure production auto-unseal.** Preserve a separate recovery copy of the original unseal key.
 
 ## 7. Bring Argo CD / GitOps into sync
 
