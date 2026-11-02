@@ -1,292 +1,146 @@
-# Ansible Layer
+# Ansible — Bootstrap, Maintenance & Recovery
 
-Project-specific notes for the Ansible bootstrap layer of `proxmox-iac-k3s-lab`.
+Ansible configures the Proxmox-provisioned hosts, bootstraps k3s/Vault/Argo CD, performs updates, and provides **separate local and GCP backup/restore workflows**.
 
-Ansible configures the Terraform-provisioned hosts and bootstraps k3s, Vault, and the services required before Argo CD takes ownership.
+For first-time setup, follow [INSTALLATION.md](../../INSTALLATION.md). **All commands below run from `ansible/`** unless stated otherwise.
 
-## Source Of Truth
+## Organization
 
-* `site.yaml` - central entry point for initial bootstrap.
-* `inventory.ini` - hosts and connection settings.
-* `group_vars/all.yaml` - shared versions and configuration.
-* `playbooks/` - individual runnable entry points.
-* `roles/` - implementation.
+- `site.yaml` — initial infrastructure/platform bootstrap, guarded by `confirm_install=true`.
+- `inventory.ini` and `group_vars/all.yaml` — nodes, settings, and version pins.
+- `playbooks/` — task entry points; `roles/` — implementations.
+- `_kubernetes/` — Argo CD's source of truth after bootstrap; do not use bootstrap roles for routine application management.
 
-Read these files for current addresses, versions, and component settings.
-
-## Responsibilities
-
-Ansible is responsible for the initial bootstrap phase.
-
-It configures the provisioned machines, installs k3s, joins the worker node, creates a local kubeconfig, and installs the initial platform components required before GitOps management is active.
-
-Main responsibilities:
-
-```text
-Base host configuration
-k3s controller setup
-k3s worker setup
-Local kubeconfig generation
-Traefik bootstrap
-Argo CD bootstrap
-Vault LXC configuration
-Argo CD root application bootstrap
-Vault Kubernetes authentication for External Secrets (separate step)
-```
-
-Some older playbooks are retained for rebuild or bootstrap scenarios, but ongoing platform management should happen through Argo CD and the `_kubernetes` directory.
-
-## Prerequisites
-
-The control machine needs Ansible, Helm, `kubectl`, and the required Ansible collection:
+## Bootstrap and updates
 
 ```bash
-ansible-galaxy collection install kubernetes.core
-```
-
-The Terraform layer should be applied before running Ansible. The control machine must be able to reach the provisioned hosts and the Kubernetes API.
-
-## Central Bootstrap: `site.yaml`
-
-Run commands from `ansible/`.
-
-The central playbook imports the existing playbooks and runs the following in order:
-
-1. Configure common settings on k3s nodes.
-2. Install the k3s controller and join worker nodes.
-3. Copy the controller's kubeconfig to the control machine.
-4. Bootstrap Traefik and Argo CD.
-5. Install/configure the Vault LXC service.
-6. Apply the Argo CD root application to start GitOps reconciliation.
-
-The entry point requires an explicit `confirm_install=true` variable. **It is intended for fresh installations, not routine execution against the running cluster.** Approval is not a guarantee that existing resources will be preserved.
-
-For a planned fresh installation, after verifying backups and the target environment, the invocation is:
-
-```bash
+# Initial installation ONLY (requires Terraform guests to exist)
 ansible-playbook site.yaml -e confirm_install=true
+
+# Existing update playbooks
+ansible-playbook playbooks/update_vault.yaml
 ```
 
-Do **not** run this command against an existing lab merely to test it: bootstrap tasks can modify live resources. A fresh infrastructure rebuild was completed on **19 October 2026** with manual Vault initialization, application secret provisioning, and GitOps sync. Follow the step-by-step [installation guide](../../INSTALLATION.md).
+`update_vault_version` in `group_vars/all.yaml` selects the desired Vault package version. The update role restarts Vault and its lab unseal service only if the package changes, then checks status/version. **Vault 1.21.2 → 1.21.4 was successfully tested on 2 November 2026.** The pinned `vault_version` value belongs to initial installation.
 
-### Local kubeconfig
+Other update playbooks should be selected from `playbooks/` according to the current repository and `group_vars/all.yaml`—do not rerun `site.yaml` as an update mechanism.
 
-The `kubeconfig` role reads `/etc/rancher/k3s/k3s.yaml` from the controller, replaces the loopback API endpoint with the controller's inventory address, and merges a named `proxmox-iac-k3s` cluster, user and context into the standard `~/.kube/config` on the control machine. It selects this context, keeps differently named entries, saves mode `0600`, and makes a backup when content changes. The configuration can be used directly:
+## Backup coverage and security
+
+| System | Included | Excluded |
+| --- | --- | --- |
+| k3s | Controller SQLite datastore and server token | PVC contents and external Vault data |
+| Vault LXC | File-based Vault data and unseal key | Development-machine Vault and application PVCs |
+
+Local k3s backup is an unencrypted archive. **Local Vault backup and both GCP backups are encrypted with Ansible Vault.** The password file `~/.k3s-backup-password` must be securely preserved independently of backups. Create it only once, if missing:
 
 ```bash
-kubectl get nodes
+test -e ~/.k3s-backup-password || (umask 077; openssl rand -base64 32 > ~/.k3s-backup-password)
 ```
 
-On a rebuild, the earlier kubeconfig may produce `x509: certificate signed by unknown authority` until new cluster credentials are merged. Run only the kubeconfig role from `ansible/` if needed:
+Backups stop and restart the relevant service for a consistent archive. Perform restores only against the intended lab and maintain an independent recovery point (such as a Proxmox snapshot).
 
-```bash
-ansible-playbook site.yaml --tags kubeconfig -e confirm_install=true
-```
-
-This merge does **not** delete older entries with a different name (such as `default`), even if they belong to the previously destroyed cluster. Preserve unrelated contexts deliberately. The kubeconfig contains credentials; never commit it.
-
-The bootstrap playbooks and root-app bootstrap now use `~/.kube/config`.
-
-### Bootstrap limitations
-
-- The `site.yaml` flow includes Vault service installation but **does not automate Vault initialization**, initial unseal, secret creation, or creation of the `eso-read` policy.
-- Vault Kubernetes authentication is excluded from ordinary Vault installation and must be configured separately **after** the required Vault and Argo CD resources exist.
-- Argo CD bootstrap checks for an existing Helm release and skips reinstallation. GitOps later reconciles the Argo CD Application itself; automatic sync was added after the recorded rebuild and has not been revalidated in another fresh rebuild.
-- Once Argo CD has taken ownership of platform resources, normal updates belong in `_kubernetes/`, not the original bootstrap playbooks.
-
-## Validation Performed (18 October 2026)
-
-The following checks were completed on the existing lab:
-
-- `ansible-playbook site.yaml --syntax-check` — passed.
-- `ansible-playbook site.yaml --list-tasks` — loaded the expected bootstrap plays and tasks in order.
-- Generated kubeconfig — tested with `kubectl get nodes`; both k3s nodes reported `Ready`.
-- `ansible-playbook site.yaml --check --diff -e confirm_install=true` — completed with zero reported changes and zero failures. Some shell/command and bootstrap tasks were skipped by check mode, so this is **not** evidence of a complete installation.
-
-Proxmox snapshots named `pre-site-test` were created for controller VM 201, worker VM 202 and Vault CT 210 before the planned rebuild exercise. Thin-pool capacity warnings were reported during snapshot creation. Snapshots are recovery points, not substitutes for independent backups, and may not provide application-consistent recovery.
-
-**19 October 2026:** Terraform destroyed and recreated VMs `201`, `202` and Vault LXC `210`; `site.yaml` completed after initial SSH readiness retries. Vault was initialized and configured manually, GitOps was explicitly synced, both nodes became `Ready`, all 19 Argo CD Applications reached `Synced / Healthy`, and three ExternalSecrets reported `SecretSynced / True`. This was a clean rebuild, **not** a restoration of prior application data or PVCs. Full steps and errors: [INSTALLATION.md](../../INSTALLATION.md).
-
-**Documentation note (26 October 2026):** The 19-application and three-ExternalSecret results above describe the **original configuration before simplification**. Longhorn, CloudNativePG and pgAdmin have since been removed from the GitOps manifests. The reduced configuration has **not yet been validated** in a new cluster reconciliation or clean rebuild.
-
-## Vault Kubernetes Authentication
-
-Vault runs outside the k3s cluster in a Proxmox LXC container. External Secrets uses the Kubernetes auth method to authenticate to Vault without a permanent Vault token stored in Kubernetes.
-
-### Configuration files
-
-- `roles/vault/tasks/main.yaml` — installs Vault and imports the tagged Kubernetes authentication tasks, excluded by default with `never`.
-- `roles/vault/tasks/kubernetes-auth.yaml` — enables the Kubernetes auth method, configures the Kubernetes API and cluster CA certificate, and creates the `external-secrets` Vault role.
-- `group_vars/all.yaml` — supplies the Kubernetes API address, Vault role, namespace, ServiceAccount, policy and audience.
-- `playbooks/vault.yaml` — obtains the Vault administrator token from the local `VAULT_TOKEN` environment variable.
-- `_kubernetes/platform/external-secrets/vault-auth.yaml` — GitOps-managed ServiceAccount and TokenReview ClusterRoleBinding.
-- `_kubernetes/platform/external-secrets/cluster-secret-store.yaml` — references the Vault Kubernetes auth role.
-
-### Initial manual prerequisites
-
-A fresh Vault LXC requires one-time operator setup before running these auth tasks:
-
-1. Initialize and unseal Vault; securely retain the administrator token and unseal key, outside the repository.
-2. Ensure the `secret` KV v2 engine is enabled and create the application's secret entries in Vault.
-3. Create the `eso-read` Vault policy (the current playbook **uses** this policy but does not create it).
-4. Install Argo CD, apply the root application, and wait for Argo CD to deploy the `vault-auth` ServiceAccount in `external-secrets`.
-5. Ensure the control machine's `kubectl` context points to the correct k3s cluster and Vault LXC can reach its Kubernetes API.
-
-Required Vault policy:
-
-```hcl
-path "secret/data/apps/*" {
-  capabilities = ["read"]
-}
-
-path "secret/metadata/apps/*" {
-  capabilities = ["list", "read"]
-}
-```
-
-The lab's disk-based unseal helper in `roles/vault/` is a convenience for a local learning environment, **not** a production security mechanism.
-
-### Configure through Ansible
-
-Run from `ansible/` on the control machine, using a **Vault LXC administrator token**, not the token from the separate local development Vault. The kubeconfig role sets the current context in `~/.kube/config`:
-
-```bash
-read -s VAULT_TOKEN && export VAULT_TOKEN
-ansible-playbook playbooks/vault.yaml --tags vault-kubernetes-auth
-unset VAULT_TOKEN
-```
-
-Run this only when the prerequisites above are met. The auth tasks read the Kubernetes CA certificate through the control machine's `kubectl` context. The Vault role is bound to the `vault-auth` ServiceAccount in `external-secrets`, with policy `eso-read` and the configured Kubernetes token audience.
-
-After the initial setup, External Secrets obtains short-lived Vault tokens by authenticating with Kubernetes ServiceAccount credentials. There is no ongoing manual Vault token renewal. The initial Vault setup, administrator credential supply and application secret creation are **not yet unattended**.
-
-### Verify
-
-```bash
-kubectl get sa vault-auth -n external-secrets
-kubectl get clustersecretstore vault-k3s
-kubectl get externalsecrets -A
-```
-
-The store should report `Valid` / `Ready=True` and the secrets should report `SecretSynced` / `Ready=True`.
-
-## GCP Connection Check
-
-`playbooks/gcp_connection.yaml` runs the `gcp_connection` role on the local control machine. It checks access to the GCS backup bucket using `gcloud storage ls` with **Service Account Impersonation**. This is a read-only connectivity check; it does not upload or restore backups.
-
-### Prerequisites and initial setup
-
-- Apply the GCP Terraform configuration to create the bucket, `ansible-backup` Service Account and bucket-scoped permissions.
-- Install and authenticate the Google Cloud CLI on the Ansible control machine (`gcloud auth login`).
-- On the first setup, grant the authenticated user `roles/iam.serviceAccountTokenCreator` on the `ansible-backup` Service Account. This one-time command and its security rationale are documented in [Terraform's GCP initial setup](../../terraform/_docs/README.md#initial-gcp-access-setup). Repeat after deleting and recreating the Service Account.
-
-No Service Account JSON keys are created or stored. The personal user's impersonation permission is managed outside Terraform to keep that email out of Terraform State; the identity still appears in the Google Cloud IAM policy.
-
-### Run
-
-From `ansible/`:
-
-```bash
-ansible-playbook playbooks/gcp_connection.yaml
-```
-
-The check uses the local `gcloud` login to obtain temporary impersonated credentials. Successful execution confirms read/list access to the bucket. Encrypted GCS upload is available separately through `playbooks/backup_k3s_gcp.yaml`; download and restore from GCS have not yet been tested.
-
-## Backup and Disaster Recovery
-
-Backups cover the k3s controller's SQLite datastore and server token, plus the external Vault LXC's file storage and unseal key. **Application PVC data is not included.**
-
-### Backup
-
-Run from `ansible/`:
+## Local backup
 
 ```bash
 ansible-playbook playbooks/backup_k3s_local.yaml
 ansible-playbook playbooks/backup_vault_local.yaml
 ```
 
-Backups are saved to `~/k3s-backups/` on the control machine:
+Backups are saved on the development machine under `~/k3s-backups/` as `k3s-backup.tar.gz` and encrypted `vault-backup.tar.gz`. Subsequent runs overwrite these local filenames; copy them securely elsewhere if previous generations are needed.
 
-- `k3s-backup.tar.gz` — k3s SQLite datastore and server token (not encrypted).
-- `vault-backup.tar.gz` — Vault file storage and unseal key, encrypted with Ansible Vault.
+## Local restore
 
-Keep `~/.k3s-backup-password` secure and separate from the backups. Do not commit backups, tokens or encryption passwords to Git.
-
-### Backup Encryption Password
-
-Ansible Vault uses `~/.k3s-backup-password` to encrypt Vault backups and k3s backups uploaded to GCS.
-
-For a first-time setup, create the password file only if it does not already exist:
-
-```bash
-test -e ~/.k3s-backup-password || (umask 077; openssl rand -base64 32 > ~/.k3s-backup-password)
-```
-
-Keep a secure copy of this password outside the repository and separately from the backups.
-
-**Never overwrite or delete an existing password file.** Losing it will make the encrypted backups unrecoverable.
-
-### GCP Backup
-
-GCP backup is optional and independent of the existing local backup workflow.
-
-Run from `ansible/`:
-
-```bash
-ansible-playbook playbooks/backup_k3s_gcp.yaml
-```
-
-The playbook backs up the k3s datastore and server token, encrypts the archive using Ansible Vault, and uploads it to `gs://proxmox-iac-lab-backups/k3s/` using Service Account Impersonation.
-
-Temporary files are removed after execution. No Service Account JSON keys are required.
-
-**Verified on 1 November 2026:** Backup creation, encryption, upload and GCS object listing succeeded.
-
-Downloading, decrypting and restoring a k3s backup from GCS were successfully tested on 2 November 2026.
-
-### Restore
-
-Run from `ansible/` after confirming the local backups are available and taking Proxmox snapshots or equivalent independent recovery points:
-
-In the tested workflow, Proxmox snapshots were created **before updating** k3s (`before-updates-2026-10-05` on VMs 201 and 202) and **before restoring** (`pre-restore` on VMs 201 and 202 and Vault CT 210). Snapshots were not a step performed before the backup command itself.
+**Both restore playbooks replace live service data and require explicit confirmation.** Run independently:
 
 ```bash
 ansible-playbook playbooks/restore_k3s_local.yaml -e confirm_restore=true
 ansible-playbook playbooks/restore_vault_local.yaml -e confirm_restore=true
 ```
 
-The restore temporarily stops the k3s worker, controller and Vault services as needed, preserves existing server data using `.pre-restore` paths, and attempts rollback on task failures. Rollback is **not guaranteed** for every failure; the restore also requires downtime.
+A restore preserves the prior data in `*.pre-restore` locations for attempted rollback. It will refuse to run again while those files exist. Only remove them **after independently confirming the restored services work**. See the cleanup commands below.
 
-### Verification
+## GCP setup and connection
+
+GCS backups use a Terraform-managed bucket, dedicated `ansible-backup` Service Account, and **Service Account Impersonation**—not JSON keys. Complete the one-time GCP Terraform, impersonation permission, and password setup in [INSTALLATION.md](../../INSTALLATION.md#9-optional-configure-encrypted-gcp-backups).
+
+```bash
+ansible-playbook playbooks/gcp_connection.yaml
+```
+
+## GCP backup
+
+```bash
+ansible-playbook playbooks/backup_k3s_gcp.yaml
+ansible-playbook playbooks/backup_vault_gcp.yaml
+```
+
+Each playbook archives its own service, encrypts the archive using Ansible Vault, uploads a timestamped object, and removes temporary files. Objects are stored under:
+
+- `gs://proxmox-iac-lab-backups/k3s/`
+- `gs://proxmox-iac-lab-backups/vault/`
+
+Terraform configures deletion of matching `.tar.gz` backups after **30 days**. This is an automatic deletion rule, not a retention guarantee.
+
+## GCP restore
+
+**Choose the exact backup object** to recover. The roles require `confirm_restore=true`, restrict the object URI to the correct service's GCS prefix and timestamped filename, and verify decryption/archive integrity **before** stopping the service.
+
+First list available objects:
+
+```bash
+gcloud storage ls gs://proxmox-iac-lab-backups/k3s/ --impersonate-service-account=ansible-backup@proxmox-iac-k3s-lab.iam.gserviceaccount.com
+gcloud storage ls gs://proxmox-iac-lab-backups/vault/ --impersonate-service-account=ansible-backup@proxmox-iac-k3s-lab.iam.gserviceaccount.com
+```
+
+Select an object and substitute it below:
+
+```bash
+ansible-playbook playbooks/restore_k3s_gcp.yaml \
+  -e confirm_restore=true \
+  -e gcp_backup_object=gs://proxmox-iac-lab-backups/k3s/k3s-backup-<YYYYMMDDTHHMMSSZ>.tar.gz
+
+ansible-playbook playbooks/restore_vault_gcp.yaml \
+  -e confirm_restore=true \
+  -e gcp_backup_object=gs://proxmox-iac-lab-backups/vault/vault-backup-<YYYYMMDDTHHMMSSZ>.tar.gz
+```
+
+The date-shaped filename placeholders are examples, not literal valid paths. **Do not paste a placeholder command without selecting a real backup.** Both operations cause service downtime. Rollback is attempted on failure but is not guaranteed in every scenario.
+
+## Verify recovery
 
 ```bash
 kubectl get nodes
 kubectl get applications -n argocd
 kubectl get clustersecretstore vault-k3s
 kubectl get externalsecrets -A
+ssh root@10.0.20.110 "VAULT_ADDR=http://127.0.0.1:8200 vault status"
 ```
 
-A real restore was successfully executed on the existing lab: both nodes returned to `Ready`, all 19 Argo CD applications reported `Synced / Healthy`, and all three ExternalSecrets reported `SecretSynced / Ready=True` when checked. The ExternalSecrets last-sync timestamps were not refreshed during that check.
+`vault status` returns success when Vault is initialized and unsealed; keep its administrator credentials private. The ExternalSecrets `Ready=True` status is useful but does not alone prove that a new secret sync occurred after recovery.
 
-**Scope:** k3s datastore and external Vault only; PVC data recovery has not been tested. A **separate clean infrastructure rebuild** was successfully performed on 19 October 2026, without restoring the prior application data.
+### Remove restore leftovers after successful validation
 
-### GCP Restore Guardrails
+Only if corresponding restore files exist and the restored services have been verified:
 
-GCS restore playbooks use `confirm_restore=true` and require an explicit backup object path. K3s restores accept only `gs://proxmox-iac-lab-backups/k3s/k3s-backup-<timestamp>.tar.gz`; Vault restores accept only `gs://proxmox-iac-lab-backups/vault/vault-backup-<timestamp>.tar.gz`. Download, Ansible Vault decryption, and archive integrity verification happen before services are stopped.
-
-The Vault GCS restore uses `playbooks/restore_vault_gcp.yaml` and `roles/restore_vault_gcp`, independently of local restore. It preserves the prior Vault data and unseal key for attempted rollback. Provide `gcp_backup_object` when invoking the playbook. **The Vault GCS restore has not yet been executed or validated.**
-
-These guardrails reduce accidental restores but do not guarantee recovery from every failure; retain an independent Proxmox snapshot before testing.
-
-## Legacy Bootstrap Playbooks
-
-The following playbooks are retained only as legacy/bootstrap code:
-
-```text
-playbooks/cert_manager.yaml
-playbooks/metallb.yaml
+```bash
+ansible controllers -b -m ansible.builtin.file -a "path=/var/lib/rancher/k3s/server/db.pre-restore state=absent"
+ansible controllers -b -m ansible.builtin.file -a "path=/var/lib/rancher/k3s/server/token.pre-restore state=absent"
+ansible vault -b -m ansible.builtin.file -a "path=/opt/vault/data.pre-restore state=absent"
+ansible vault -b -m ansible.builtin.file -a "path=/etc/vault.d/unseal.key.pre-restore state=absent"
 ```
 
-cert-manager, MetalLB, and other GitOps resources are managed from `_kubernetes/` after Argo CD takes ownership.
+## Verified recovery results — 2 November 2026
 
-Do not manage GitOps-owned components with their old Ansible playbooks during normal operation.
+| Workflow | Evidence |
+| --- | --- |
+| Local k3s backup / restore | Backup `ok=9 failed=0`; restore `ok=19 failed=0`; node readiness check passed |
+| Local Vault backup / restore | Backup `ok=14 failed=0`; restore `ok=18 failed=0`; Vault status passed |
+| GCP k3s backup / restore | Encrypted upload verified; restore `ok=21 failed=0`; node readiness passed |
+| GCP Vault backup / restore | Backup `ok=12 failed=0`; restore `ok=23 failed=0`; Vault unseal/status passed |
+
+After GCP recovery, both nodes were `Ready`, all 13 Argo CD Applications `Synced / Healthy`, Vault ClusterSecretStore `Valid / Ready=True`, and the two ExternalSecrets `SecretSynced / Ready=True`. This is evidence of successful **in-place recovery**, not a production DR test or PVC data recovery.
+
+## Limitations
+
+Recovery is scoped to the state above, **not PVCs** or a fully automated site rebuild. The local unseal helper is for the lab only. Protect all archive passwords, Vault keys, tokens, and Terraform/Kubernetes credentials; never commit them.
