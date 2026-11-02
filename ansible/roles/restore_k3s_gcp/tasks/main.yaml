@@ -1,4 +1,3 @@
-
 ---
 - name: Restore k3s from GCP
   block:
@@ -7,6 +6,212 @@
         that:
           - confirm_restore | default(false) | bool
         fail_msg: "Restore blocked. Confirmation required."
+
+    - name: Validate GCS backup path
+      ansible.builtin.assert:
+        that:
+          - gcp_backup_object is defined
+          - gcp_backup_object is match('^gs://proxmox-iac-lab-backups/k3s/k3s-backup-[0-9]{8}T[0-9]{6}Z[.]tar[.]gz
+      ansible.builtin.tempfile:
+        state: directory
+        prefix: k3s-gcp-restore-
+      delegate_to: localhost
+      become: false
+      register: restore_tmp
+
+    - name: Download encrypted backup
+      ansible.builtin.command:
+        argv:
+          - gcloud
+          - storage
+          - cp
+          - "{{ gcp_backup_object }}"
+          - "{{ restore_tmp.path }}/encrypted.tar.gz"
+          - --impersonate-service-account=ansible-backup@proxmox-iac-k3s-lab.iam.gserviceaccount.com
+      delegate_to: localhost
+      become: false
+
+    - name: Decrypt backup
+      ansible.builtin.command:
+        argv:
+          - ansible-vault
+          - decrypt
+          - --vault-password-file
+          - "{{ lookup('env', 'HOME') }}/.k3s-backup-password"
+          - --output
+          - "{{ restore_tmp.path }}/k3s-backup.tar.gz"
+          - "{{ restore_tmp.path }}/encrypted.tar.gz"
+      delegate_to: localhost
+      become: false
+      no_log: true
+
+    - name: Verify archive integrity
+      ansible.builtin.command:
+        argv:
+          - tar
+          - -tzf
+          - "{{ restore_tmp.path }}/k3s-backup.tar.gz"
+      delegate_to: localhost
+      become: false
+      changed_when: false
+
+    - name: Check previous restore files
+      ansible.builtin.stat:
+        path: "{{ item }}"
+      loop:
+        - /var/lib/rancher/k3s/server/db.pre-restore
+        - /var/lib/rancher/k3s/server/token.pre-restore
+      register: previous_restore
+
+    - name: Require clean restore state
+      ansible.builtin.assert:
+        that:
+          - previous_restore.results | selectattr('stat.exists') | list | length == 0
+        fail_msg: "Previous restore files exist. Restore blocked."
+
+    - name: Upload backup to controller
+      ansible.builtin.copy:
+        src: "{{ restore_tmp.path }}/k3s-backup.tar.gz"
+        dest: /root/k3s-restore.tar.gz
+        owner: root
+        group: root
+        mode: "0600"
+
+    - name: Restore k3s datastore
+      block:
+        - name: Mark service restoration required
+          ansible.builtin.set_fact:
+            gcp_k3s_services_touched: true
+
+        - name: Stop workers
+          ansible.builtin.systemd_service:
+            name: k3s-agent
+            state: stopped
+          delegate_to: "{{ item }}"
+          loop: "{{ groups['workers'] }}"
+
+        - name: Stop controller
+          ansible.builtin.systemd_service:
+            name: k3s
+            state: stopped
+
+        - name: Preserve original token
+          ansible.builtin.copy:
+            src: /var/lib/rancher/k3s/server/token
+            dest: /var/lib/rancher/k3s/server/token.pre-restore
+            remote_src: true
+            mode: "0600"
+
+        - name: Preserve original database
+          ansible.builtin.command:
+            argv:
+              - mv
+              - /var/lib/rancher/k3s/server/db
+              - /var/lib/rancher/k3s/server/db.pre-restore
+
+        - name: Extract backup
+          ansible.builtin.unarchive:
+            src: /root/k3s-restore.tar.gz
+            dest: /var/lib/rancher/k3s/server/
+            remote_src: true
+
+        - name: Start controller
+          ansible.builtin.systemd_service:
+            name: k3s
+            state: started
+
+        - name: Start workers
+          ansible.builtin.systemd_service:
+            name: k3s-agent
+            state: started
+          delegate_to: "{{ item }}"
+          loop: "{{ groups['workers'] }}"
+
+        - name: Verify Kubernetes nodes
+          ansible.builtin.command:
+            argv:
+              - k3s
+              - kubectl
+              - wait
+              - --for=condition=Ready
+              - nodes
+              - --all
+              - --timeout=180s
+          changed_when: false
+
+      rescue:
+        - name: Check original database
+          ansible.builtin.stat:
+            path: /var/lib/rancher/k3s/server/db.pre-restore
+          register: original_db
+
+        - name: Stop controller for rollback
+          ansible.builtin.systemd_service:
+            name: k3s
+            state: stopped
+          when: original_db.stat.exists
+
+        - name: Remove failed database
+          ansible.builtin.file:
+            path: /var/lib/rancher/k3s/server/db
+            state: absent
+          when: original_db.stat.exists
+
+        - name: Restore original database
+          ansible.builtin.command:
+            argv:
+              - mv
+              - /var/lib/rancher/k3s/server/db.pre-restore
+              - /var/lib/rancher/k3s/server/db
+          when: original_db.stat.exists
+
+        - name: Check original token
+          ansible.builtin.stat:
+            path: /var/lib/rancher/k3s/server/token.pre-restore
+          register: original_token
+
+        - name: Restore original token
+          ansible.builtin.copy:
+            src: /var/lib/rancher/k3s/server/token.pre-restore
+            dest: /var/lib/rancher/k3s/server/token
+            remote_src: true
+            mode: "0600"
+          when: original_token.stat.exists
+
+        - name: Report restore failure
+          ansible.builtin.fail:
+            msg: "GCP restore failed. Rollback attempted."
+
+  always:
+    - name: Start controller
+      ansible.builtin.systemd_service:
+        name: k3s
+        state: started
+      when: gcp_k3s_services_touched | default(false) | bool
+
+    - name: Start workers
+      ansible.builtin.systemd_service:
+        name: k3s-agent
+        state: started
+      delegate_to: "{{ item }}"
+      loop: "{{ groups['workers'] }}"
+      when: gcp_k3s_services_touched | default(false) | bool
+
+    - name: Remove remote temporary archive
+      ansible.builtin.file:
+        path: /root/k3s-restore.tar.gz
+        state: absent
+      when: gcp_k3s_services_touched | default(false) | bool
+
+    - name: Remove local temporary directory
+      ansible.builtin.file:
+        path: "{{ restore_tmp.path }}"
+        state: absent
+      delegate_to: localhost
+      become: false
+      when: restore_tmp.path is defined
+)
+        fail_msg: "Provide a K3s backup object under the approved GCS prefix."
 
     - name: Prepare temporary directory
       ansible.builtin.tempfile:
@@ -180,7 +385,7 @@
       ansible.builtin.systemd_service:
         name: k3s
         state: started
-      when: confirm_restore | default(false) | bool
+      when: gcp_k3s_services_touched | default(false) | bool
 
     - name: Start workers
       ansible.builtin.systemd_service:
@@ -188,13 +393,13 @@
         state: started
       delegate_to: "{{ item }}"
       loop: "{{ groups['workers'] }}"
-      when: confirm_restore | default(false) | bool
+      when: gcp_k3s_services_touched | default(false) | bool
 
     - name: Remove remote temporary archive
       ansible.builtin.file:
         path: /root/k3s-restore.tar.gz
         state: absent
-      when: confirm_restore | default(false) | bool
+      when: gcp_k3s_services_touched | default(false) | bool
 
     - name: Remove local temporary directory
       ansible.builtin.file:
