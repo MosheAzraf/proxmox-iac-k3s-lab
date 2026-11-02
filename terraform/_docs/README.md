@@ -115,7 +115,7 @@ The GCP Terraform root enables three Google Cloud APIs:
 
 The API resources use `disable_on_destroy = false` so Terraform does not disable the APIs during a teardown.
 
-`storage.tf` creates the `proxmox-iac-lab-backups` bucket in `me-west1`, the `k3s/` object prefix, and a lifecycle rule deleting `k3s/*.tar.gz` objects after 30 days. Public access prevention and uniform bucket-level access are enabled; soft delete is disabled.
+`storage.tf` creates the `proxmox-iac-lab-backups` bucket in `me-west1`, the `k3s/` and `vault/` object prefixes, and a lifecycle rule deleting `*.tar.gz` backup objects under either prefix after 30 days. Public access prevention and uniform bucket-level access are enabled; soft delete is disabled.
 
 `iam.tf` provisions the `ansible-backup` Service Account with `roles/storage.objectCreator` and `roles/storage.objectViewer` scoped to that bucket. No Service Account keys are created.
 
