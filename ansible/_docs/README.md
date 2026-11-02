@@ -18,12 +18,13 @@ For first-time setup, follow [INSTALLATION.md](../../INSTALLATION.md). **All com
 ansible-playbook site.yaml -e confirm_install=true
 
 # Existing update playbooks
+ansible-playbook playbooks/update_k3s.yaml
 ansible-playbook playbooks/update_vault.yaml
 ```
 
 `update_vault_version` in `group_vars/all.yaml` selects the desired Vault package version. The update role restarts Vault and its lab unseal service only if the package changes, then checks status/version. **Vault 1.21.2 → 1.21.4 was successfully tested on 2 November 2026.** The pinned `vault_version` value belongs to initial installation.
 
-Other update playbooks should be selected from `playbooks/` according to the current repository and `group_vars/all.yaml`—do not rerun `site.yaml` as an update mechanism.
+`update_k3s_version` in `group_vars/all.yaml` controls the k3s update target. Do not rerun `site.yaml` as an update mechanism.
 
 ## Backup coverage and security
 
