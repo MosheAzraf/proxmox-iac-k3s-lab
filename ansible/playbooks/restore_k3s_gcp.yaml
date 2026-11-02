@@ -1,0 +1,7 @@
+---
+- name: Restore k3s from GCP
+  hosts: controllers
+  become: true
+
+  roles:
+    - restore_k3s_gcp
