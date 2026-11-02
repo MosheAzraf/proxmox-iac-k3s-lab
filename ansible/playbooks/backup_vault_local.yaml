@@ -1,0 +1,7 @@
+---
+- name: Backup Vault locally
+  hosts: vault
+  become: true
+
+  roles:
+    - backup_vault_local
