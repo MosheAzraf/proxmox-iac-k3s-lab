@@ -190,7 +190,7 @@ From `ansible/`:
 ansible-playbook playbooks/gcp_connection.yaml
 ```
 
-The check uses the local `gcloud` login to obtain temporary impersonated credentials. Successful execution confirms read/list access to the bucket. Encrypted GCS upload is available separately through `playbooks/gcp_backup.yaml`; download and restore from GCS have not yet been tested.
+The check uses the local `gcloud` login to obtain temporary impersonated credentials. Successful execution confirms read/list access to the bucket. Encrypted GCS upload is available separately through `playbooks/backup_k3s_gcp.yaml`; download and restore from GCS have not yet been tested.
 
 ## Backup and Disaster Recovery
 
@@ -201,7 +201,8 @@ Backups cover the k3s controller's SQLite datastore and server token, plus the e
 Run from `ansible/`:
 
 ```bash
-ansible-playbook playbooks/backup.yaml
+ansible-playbook playbooks/backup_k3s_local.yaml
+ansible-playbook playbooks/backup_vault_local.yaml
 ```
 
 Backups are saved to `~/k3s-backups/` on the control machine:
@@ -232,7 +233,7 @@ GCP backup is optional and independent of the existing local backup workflow.
 Run from `ansible/`:
 
 ```bash
-ansible-playbook playbooks/gcp_backup.yaml
+ansible-playbook playbooks/backup_k3s_gcp.yaml
 ```
 
 The playbook backs up the k3s datastore and server token, encrypts the archive using Ansible Vault, and uploads it to `gs://proxmox-iac-lab-backups/k3s/` using Service Account Impersonation.
@@ -241,7 +242,7 @@ Temporary files are removed after execution. No Service Account JSON keys are re
 
 **Verified on 1 November 2026:** Backup creation, encryption, upload and GCS object listing succeeded.
 
-Downloading, decrypting and restoring a backup from GCS have not yet been tested.
+Downloading, decrypting and restoring a k3s backup from GCS were successfully tested on 2 November 2026.
 
 ### Restore
 
@@ -250,8 +251,8 @@ Run from `ansible/` after confirming the local backups are available and taking 
 In the tested workflow, Proxmox snapshots were created **before updating** k3s (`before-updates-2026-10-05` on VMs 201 and 202) and **before restoring** (`pre-restore` on VMs 201 and 202 and Vault CT 210). Snapshots were not a step performed before the backup command itself.
 
 ```bash
-ansible-playbook playbooks/restore.yaml --syntax-check
-ansible-playbook playbooks/restore.yaml -e confirm_restore=true
+ansible-playbook playbooks/restore_k3s_local.yaml -e confirm_restore=true
+ansible-playbook playbooks/restore_vault_local.yaml -e confirm_restore=true
 ```
 
 The restore temporarily stops the k3s worker, controller and Vault services as needed, preserves existing server data using `.pre-restore` paths, and attempts rollback on task failures. Rollback is **not guaranteed** for every failure; the restore also requires downtime.
