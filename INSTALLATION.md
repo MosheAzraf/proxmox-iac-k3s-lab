@@ -153,7 +153,8 @@ The lab's Ansible bootstrap installs the `vault-unseal` helper and unit, but **d
 
 ```bash
 read -rs "VAULT_UNSEAL_KEY?Vault unseal key: "; echo
-ansible-playbook playbooks/vault.yaml -e "$(VAULT_UNSEAL_KEY="$VAULT_UNSEAL_KEY" python3 -c 'import json,os; print(json.dumps({"vault_unseal_key":os.environ["VAULT_UNSEAL_KEY"]}))')"
+ansible-playbook playbooks/vault.yaml \
+  -e '{"vault_unseal_key": "'"$VAULT_UNSEAL_KEY"'"}'
 unset VAULT_UNSEAL_KEY
 ```
 
