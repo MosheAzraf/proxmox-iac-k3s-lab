@@ -142,6 +142,25 @@ ansible vault -b -m ansible.builtin.file -a "path=/etc/vault.d/unseal.key.pre-re
 
 After GCP recovery, both nodes were `Ready`, all 13 Argo CD Applications `Synced / Healthy`, Vault ClusterSecretStore `Valid / Ready=True`, and the two ExternalSecrets `SecretSynced / Ready=True`. This is evidence of successful **in-place recovery**, not a production DR test or PVC data recovery.
 
+## Verified clean rebuild and GCS recovery — 3 November 2026
+
+After Terraform recreated the Proxmox guests and nine GCP resources, Ansible bootstrapped k3s, Traefik, Argo CD, and Vault. Initial host SSH readiness required a second `site.yaml` run. Cluster Vault was initialized and unsealed manually, then the lab auto-unseal helper was configured by Ansible.
+
+| Workflow | Observed result |
+| --- | --- |
+| k3s encrypted GCS backup | `ok=11 failed=0` |
+| Vault encrypted GCS backup | `ok=12 failed=0` |
+| k3s GCS restore | `ok=23 failed=0`; both nodes Ready |
+| Vault GCS restore | `ok=23 failed=0`; Vault status passed |
+
+**Post-restore validation:** both nodes `Ready`; all 13 Argo CD Applications `Synced / Healthy`; Vault ClusterSecretStore `Valid / Ready=True`; Homarr and Renovate ExternalSecrets `SecretSynced / Ready=True`.
+
+During the run, the k3s GCS restore role's malformed/duplicated YAML was repaired and the corrected playbook was syntax-checked before the successful restore. Homarr initially failed with an invalid encryption key containing a trailing newline; a 64-character key without the newline restored startup. Its embedded Redis cache also required a recovery/restart before the application could be used. Neither CloudNativePG nor a separate Redis service was added.
+
+The GCP project's creation, development-machine Vault and Proxmox API credential were **not** recreated during this run; GCP Service Account impersonation was granted again after its recreation. This was a guided rebuild, not a fully unattended deployment. The post-restore ExternalSecrets status confirms readiness but does not by itself prove a new sync after restore.
+
+**Restore leftovers:** the successful restore playbooks retain `*.pre-restore` copies for rollback. After verifying recovery, use the cleanup commands above before attempting another restore.
+
 ## Limitations
 
 Recovery is scoped to the state above, **not PVCs** or a fully automated site rebuild. The local unseal helper is for the lab only. Protect all archive passwords, Vault keys, tokens, and Terraform/Kubernetes credentials; never commit them.
