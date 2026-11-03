@@ -53,11 +53,15 @@ Use the layer-specific guides for ongoing operations:
 
 ## Verified results
 
-**2 November 2026:** Both k3s and Vault were backed up and restored successfully **locally and through GCS** using Ansible. GCS backups were encrypted with Ansible Vault. Post-restore validation showed two k3s nodes `Ready`, 13 Argo CD Applications `Synced / Healthy`, the Vault ClusterSecretStore `Valid / Ready=True`, and two ExternalSecrets `SecretSynced / Ready=True`. The ExternalSecrets status checks did **not** establish a new sync timestamp.
+**3 November 2026 — clean rebuild and GCP recovery test.** The Terraform-managed Proxmox VMs and Vault LXC were destroyed and recreated, and the nine GCP resources (bucket, prefixes, service account, IAM bindings, and APIs) were recreated without recreating the existing GCP project. Ansible installed k3s, Traefik, Argo CD, and Vault; GitOps reconciled the reduced platform.
 
-A clean infrastructure rebuild was demonstrated on **19 October 2026**, before the later platform simplification; the current smaller platform has been validated in place, **not** through another complete clean rebuild.
+Encrypted GCS backups and restores of **both k3s and cluster Vault** succeeded. Final post-restore checks showed both k3s nodes `Ready`, all **13** Argo CD Applications `Synced / Healthy`, Vault ClusterSecretStore `Valid / Ready=True`, and both ExternalSecrets `SecretSynced / Ready=True`.
 
-**Recovery scope:** k3s SQLite datastore/server token and Vault data/unseal key. **PVC data is not backed up by these workflows.** Rollback is attempted but not guaranteed after every failure.
+The rebuild **was not fully unattended**: the Proxmox API token and local development Vault were reused; cluster Vault initialization, secrets, and GCP impersonation binding required manual steps. The first LXC provisioning attempt stalled and required a clean retry; Ansible was rerun after SSH became available. A malformed k3s GCP restore YAML file was fixed before the successful restore. Homarr required a correctly formatted encryption key and a restart/recovery of its embedded Redis cache. See [installation](INSTALLATION.md) and [Ansible recovery notes](ansible/_docs/README.md).
+
+**2 November 2026 — local and GCS recovery.** k3s and Vault were also backed up and restored locally and through GCS on the existing lab.
+
+**Recovery scope:** k3s SQLite datastore/server token and cluster Vault data/unseal key. **PVC data is not backed up by these workflows.** Rollback is attempted but is not guaranteed after every failure.
 
 ## Design boundaries
 
