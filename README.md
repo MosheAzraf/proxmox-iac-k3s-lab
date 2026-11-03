@@ -18,15 +18,62 @@ The goal is reproducibility and practical infrastructure engineering—not a pro
 | Monitoring & updates | Prometheus, Grafana, Renovate | Cluster visibility and dependency updates |
 | Recovery | Ansible Vault, Google Cloud Storage | Encrypted Vault backups and local/GCS recovery workflows |
 
-```text
-Proxmox VE
-├── k3s controller (VM 201)
-├── k3s worker     (VM 202)
-└── Vault          (LXC 210)
-     └── External Secrets → Kubernetes workloads
+```mermaid
+flowchart TB
+    SOURCE["Git repository<br/>IaC + GitOps configuration"]
+    LOCAL["Development machine<br/>Local Vault: Proxmox API credentials"]
 
-Terraform → Ansible bootstrap → Argo CD / GitOps
-                         └── Ansible backup & restore ↔ GCS
+    subgraph PROVISION["01 · Provision"]
+        TF["Terraform"]
+        PROXMOX["Proxmox VE"]
+        CLOUD["GCP infrastructure<br/>Storage bucket + IAM"]
+        CTRL["k3s controller<br/>VM 201"]
+        WORKER["k3s worker<br/>VM 202"]
+        VAULT["Vault<br/>LXC 210"]
+    end
+
+    subgraph BOOTSTRAP["02 · Bootstrap & reconcile"]
+        ANSIBLE["Ansible<br/>Host and service bootstrap"]
+        ARGO["Argo CD<br/>GitOps reconciliation"]
+        PLATFORM["Kubernetes platform<br/>Traefik · MetalLB · cert-manager<br/>Monitoring · Homarr · Renovate"]
+        ESO["External Secrets Operator"]
+    end
+
+    subgraph RECOVERY["03 · Protect & recover"]
+        BACKUP["Ansible backup<br/>k3s datastore + token / Vault data + key"]
+        ENCRYPT["Ansible Vault<br/>Encrypted archives"]
+        GCS["Google Cloud Storage"]
+        RESTORE["Ansible restore"]
+        VERIFY["Validation<br/>Nodes Ready · Apps Healthy · Secrets Ready"]
+    end
+
+    LOCAL --> TF
+    SOURCE --> TF
+    TF --> PROXMOX
+    TF --> CLOUD
+    PROXMOX --> CTRL & WORKER & VAULT
+    CTRL & WORKER & VAULT --> ANSIBLE
+    ANSIBLE --> ARGO
+    SOURCE --> ARGO
+    ARGO --> PLATFORM
+    ARGO --> ESO
+    VAULT -- "Application secrets" --> ESO
+    ESO -- "Synced secrets" --> PLATFORM
+    CTRL & VAULT --> BACKUP
+    BACKUP --> ENCRYPT --> GCS
+    CLOUD -. "Bucket and IAM" .-> GCS
+    GCS --> RESTORE
+    RESTORE -- "Recover k3s and Vault" --> VERIFY
+    VERIFY -. "Healthy environment" .-> ARGO
+
+    classDef source fill:#eef2ff,stroke:#6366f1,color:#312e81,stroke-width:1px
+    classDef infra fill:#e0f2fe,stroke:#0284c7,color:#0c4a6e,stroke-width:1px
+    classDef ops fill:#dcfce7,stroke:#16a34a,color:#14532d,stroke-width:1px
+    classDef recovery fill:#fef3c7,stroke:#d97706,color:#78350f,stroke-width:1px
+    class SOURCE,LOCAL source
+    class TF,PROXMOX,CLOUD,CTRL,WORKER,VAULT infra
+    class ANSIBLE,ARGO,PLATFORM,ESO ops
+    class BACKUP,ENCRYPT,GCS,RESTORE,VERIFY recovery
 ```
 
 A **separate development-machine Vault** holds the Proxmox API credential used by Terraform. The Vault LXC holds Kubernetes application secrets. They are not interchangeable.
