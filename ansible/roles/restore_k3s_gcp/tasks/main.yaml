@@ -8,7 +8,6 @@
         fail_msg: "Restore blocked. Confirmation required."
 
     - name: Validate GCS backup path
-    - name: Validate GCS backup path
       ansible.builtin.assert:
         that:
           - gcp_backup_object is defined
@@ -16,6 +15,7 @@
         fail_msg: "Provide a K3s backup object under the approved GCS prefix."
 
     - name: Prepare temporary directory
+      ansible.builtin.tempfile:
         state: directory
         prefix: k3s-gcp-restore-
       delegate_to: localhost
