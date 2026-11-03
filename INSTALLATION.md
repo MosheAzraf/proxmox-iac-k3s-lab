@@ -77,7 +77,7 @@ Review plans before approving. The default guests are `10.0.20.101`, `10.0.20.10
 
 ## 5. Bootstrap hosts and platform with Ansible
 
-Wait for the new guests to accept SSH. Run from `ansible/`:
+Wait for the new guests to accept SSH (especially the freshly provisioned Vault LXC). Run from `ansible/`:
 
 ```bash
 cd ansible
@@ -137,10 +137,10 @@ Create the required KV v2 values using interactive input; do **not** put actual 
 | `secret/apps/homarr` | `db-encryption-key` |
 | `secret/apps/renovate` | `RENOVATE_TOKEN` |
 
-Use a securely generated Homarr encryption key (for example, `openssl rand -hex 32`) and an appropriately scoped GitHub fine-grained token for Renovate. Within the Vault LXC's Bash shell:
+Use a securely generated **64-character hex** Homarr encryption key and an appropriately scoped GitHub fine-grained token for Renovate. Within the Vault LXC's Bash shell, generate and store the key **without a trailing newline**:
 
 ```bash
-read -rs -p 'Homarr key: ' HOMARR_KEY; echo
+HOMARR_KEY="$(openssl rand -hex 32)"
 printf '%s' "$HOMARR_KEY" | vault kv put secret/apps/homarr db-encryption-key=-
 unset HOMARR_KEY
 
@@ -149,19 +149,15 @@ printf '%s' "$RENOVATE_TOKEN" | vault kv put secret/apps/renovate RENOVATE_TOKEN
 unset RENOVATE_TOKEN
 ```
 
-The lab's Ansible bootstrap installs the `vault-unseal` helper and unit, but **does not install a newly generated key automatically**. To use this optional lab-only service, **on the cluster Vault LXC as root**, enter the key interactively (do not type it into the shell command itself):
+The lab's Ansible bootstrap installs the `vault-unseal` helper and unit, but **does not install a newly generated key automatically**. After initialization, configure the optional lab-only auto-unseal using the existing Ansible Vault role. Back on the development machine in `ansible/` (zsh):
 
 ```bash
-read -rs -p 'Vault unseal key: ' UNSEAL_KEY; echo
-umask 077
-printf '%s' "$UNSEAL_KEY" > /etc/vault.d/unseal.key
-unset UNSEAL_KEY
-chmod 600 /etc/vault.d/unseal.key
-systemctl daemon-reload
-systemctl enable --now vault-unseal
+read -rs "VAULT_UNSEAL_KEY?Vault unseal key: "; echo
+ansible-playbook playbooks/vault.yaml -e "$(VAULT_UNSEAL_KEY="$VAULT_UNSEAL_KEY" python3 -c 'import json,os; print(json.dumps({"vault_unseal_key":os.environ["VAULT_UNSEAL_KEY"]}))')"
+unset VAULT_UNSEAL_KEY
 ```
 
-The role also supports provisioning this key using `vault_unseal_key` when explicitly supplied securely. **This disk-stored key is a homelab convenience, not secure production auto-unseal.** Preserve a separate recovery copy of the original unseal key.
+Do not paste or log the key. The role writes it to `/etc/vault.d/unseal.key` on the LXC and starts the helper.  **This disk-stored key is a homelab convenience, not secure production auto-unseal.** Preserve a separate recovery copy of the original unseal key.
 
 ## 7. Bring Argo CD / GitOps into sync
 
@@ -178,7 +174,7 @@ The root Application is created by `site.yaml` and currently has automated sync 
 kubectl -n argocd patch application root-app --type merge -p '{"operation":{"sync":{"revision":"HEAD","prune":true}}}'
 ```
 
-The manual command is a **fallback**, not a normal required installation step. The automated initial sync behavior has not been verified in another complete clean rebuild since it was enabled.
+The manual command is a **fallback**, not a normal required installation step. The initial root Application synced during the 3 November 2026 rebuild.
 
 ## 8. Configure Vault Kubernetes authentication
 
@@ -186,7 +182,8 @@ After GitOps creates the `external-secrets` namespace and `vault-auth` ServiceAc
 
 ```bash
 kubectl get sa vault-auth -n external-secrets
-read -s VAULT_TOKEN && export VAULT_TOKEN
+read -rs "VAULT_TOKEN?Cluster Vault root token: "; echo
+export VAULT_TOKEN
 ansible-playbook playbooks/vault.yaml --tags vault-kubernetes-auth
 unset VAULT_TOKEN
 ```
@@ -250,7 +247,7 @@ kubectl get externalsecrets -A
 
 Expected for the current reduced platform: two nodes `Ready`, all 13 Argo CD Applications `Synced / Healthy`, Vault ClusterSecretStore `Valid / Ready=True`, and two ExternalSecrets `SecretSynced / Ready=True`.
 
-**Evidence:** these statuses were observed on the existing running lab on 2 November 2026 following recovery testing. The older clean build from 19 October 2026 used a larger component set, so the current installation sequence is **not represented as a newly verified unattended rebuild**.
+**Evidence:** all these statuses were observed on 3 November 2026 after a clean rebuild and successful encrypted GCS restores of both k3s and Vault. This was a **guided rebuild**, not a fully unattended installation: the local development Vault/API credential and the GCP project were retained, while cluster Vault initialization, application secrets, and a one-time GCP IAM impersonation binding required manual steps. On the first LXC attempt Terraform stalled and the resource was recreated successfully on retry.
 
 ## Operational guides and limits
 
